@@ -158,6 +158,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 double futureOverlap = Math.Sqrt(Math.Max(0, nextCircleRadius + 75 - nextObj.LazyJumpDistance));
 
                 // Reduce difficulty if movement to next object is small
+                // Reduce difficulty if next object envelops current object
                 futureOverlap *= DifficultyCalculationUtils.Smootherstep(nextObj.LazyJumpDistance, nextCircleRadius - 50, distance_influence_threshold);
                 traceableDifficulty *= 1 + futureOverlap;
             }
