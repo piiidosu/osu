@@ -20,10 +20,13 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
 
         private readonly bool hasHiddenMod;
 
+        private readonly bool hasTraceableMod;
+
         public Reading(Mod[] mods)
             : base(mods)
         {
             hasHiddenMod = mods.OfType<OsuModHidden>().Any(m => !m.OnlyFadeApproachCircles.Value);
+            hasTraceableMod = mods.OfType<OsuModTraceable>();
         }
 
         private double currentDifficulty;
@@ -39,7 +42,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
 
             currentDifficulty *= strainDecay(current.DeltaTime);
 
-            currentDifficulty += ReadingEvaluator.EvaluateDifficultyOf(current, hasHiddenMod) * skillMultiplier;
+            currentDifficulty += ReadingEvaluator.EvaluateDifficultyOf(current, hasHiddenMod, hasTraceableMod) * skillMultiplier;
 
             return currentDifficulty;
         }

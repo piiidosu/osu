@@ -23,7 +23,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
         private const double minimum_angle_relevancy_time = 2000; // 2 seconds
         private const double maximum_angle_relevancy_time = 200;
 
-        public static double EvaluateDifficultyOf(DifficultyHitObject current, bool hidden)
+        public static double EvaluateDifficultyOf(DifficultyHitObject current, bool hidden, bool traceable)
         {
             if (current.BaseObject is Spinner || current.Index == 0)
                 return 0;
@@ -44,9 +44,13 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 ? calculateHiddenDifficulty(currObj, pastObjectDifficultyInfluence, currentVisibleObjectDensity, velocity, constantAngleNerfFactor)
                 : 0;
 
+            double traceableDifficulty = traceable
+                ? calculateTraceableDifficulty(currObj, nextObj, pastObjectDifficultyInfluence, currentVisibleObjectDensity, velocity, constantAngleNerfFactor)
+                : 0;
+
             double preemptDifficulty = calculatePreemptDifficulty(velocity, constantAngleNerfFactor, currObj.Preempt);
 
-            double difficulty = DifficultyCalculationUtils.Norm(1.5, preemptDifficulty, hiddenDifficulty, noteDensityDifficulty);
+            double difficulty = DifficultyCalculationUtils.Norm(1.5, preemptDifficulty, hiddenDifficulty, noteDensityDifficulty, traceableDifficulty);
 
             return difficulty;
         }
@@ -137,6 +141,24 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             return hiddenDifficulty;
         }
 
+        private static double calculateTraceableDifficulty(OsuDifficultyHitObject currObj, OsuDifficultyHitObject nextObj, double pastObjectDifficultyInfluence, double currentVisibleObjectDensity, double velocity, double constantAngleNerfFactor)
+        {
+            // Account for both past and current densities
+            double densityFactor = Math.Pow(currentVisibleObjectDensity + pastObjectDifficultyInfluence, 3.3) * 3;
+
+            double traceableDifficulty = densityFactor * constantAngleNerfFactor * velocity * 0.01;
+            if (nextObj != null)
+            {
+                // Calculates how much the following circle overlaps with the current one
+                double nextCircleRadius = ((3 * (nextObj.AdjustedDeltaTime / nextObj.Preempt)) + 1) * 50;
+                double futureOverlap = Math.Max(0, nextCircleRadius + 50 - nextObj.LazyJumpDistance) / 10;
+
+                // Reduce difficulty if movement to next object is within one circle diameter
+                futureOverlap *= DifficultyCalculationUtils.Smootherstep(nextObj.LazyJumpDistance, 0, 100);
+                traceableDifficulty *= futureOverlap;
+            }
+            return traceableDifficulty;
+        }
         private static double getPastObjectDifficultyInfluence(OsuDifficultyHitObject currObj)
         {
             double pastObjectDifficultyInfluence = 0;
