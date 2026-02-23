@@ -26,7 +26,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
             : base(mods)
         {
             hasHiddenMod = mods.OfType<OsuModHidden>().Any(m => !m.OnlyFadeApproachCircles.Value);
-            hasTraceableMod = mods.OfType<OsuModTraceable>();
+            hasTraceableMod = mods.OfType<OsuModTraceable>().Any(m => m is OsuModTraceable);
         }
 
         private double currentDifficulty;

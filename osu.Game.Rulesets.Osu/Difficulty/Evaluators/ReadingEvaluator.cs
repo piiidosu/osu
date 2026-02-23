@@ -16,6 +16,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
         private const double reading_window_size = 3000; // 3 seconds
         private const double distance_influence_threshold = OsuDifficultyHitObject.NORMALISED_DIAMETER * 1.5; // 1.5 circles distance between centers
         private const double hidden_multiplier = 0.28;
+        private const double traceable_multiplier = 1;
         private const double density_multiplier = 2.4;
         private const double density_difficulty_base = 2.5;
         private const double preempt_balancing_factor = 140000;
@@ -147,15 +148,18 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             double densityFactor = Math.Pow(currentVisibleObjectDensity + pastObjectDifficultyInfluence, 3.3) * 3;
 
             double traceableDifficulty = densityFactor * constantAngleNerfFactor * velocity * 0.01;
+
+            // Apply a soft cap to general TC reading to account for partial memorization
+            traceableDifficulty = Math.Pow(traceableDifficulty, 0.4) * traceable_multiplier;
             if (nextObj != null)
             {
                 // Calculates how much the following circle overlaps with the current one
                 double nextCircleRadius = ((3 * (nextObj.AdjustedDeltaTime / nextObj.Preempt)) + 1) * 50;
-                double futureOverlap = Math.Max(0, nextCircleRadius + 50 - nextObj.LazyJumpDistance) / 10;
+                double futureOverlap = Math.Sqrt(Math.Max(0, nextCircleRadius + 75 - nextObj.LazyJumpDistance));
 
-                // Reduce difficulty if movement to next object is within one circle diameter
-                futureOverlap *= DifficultyCalculationUtils.Smootherstep(nextObj.LazyJumpDistance, 0, 100);
-                traceableDifficulty *= futureOverlap;
+                // Reduce difficulty if movement to next object is small
+                futureOverlap *= DifficultyCalculationUtils.Smootherstep(nextObj.LazyJumpDistance, nextCircleRadius - 50, distance_influence_threshold);
+                traceableDifficulty *= 1 + futureOverlap;
             }
             return traceableDifficulty;
         }
