@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using osu.Framework.Extensions.ObjectExtensions;
 using osu.Game.Rulesets.Difficulty.Preprocessing;
 using osu.Game.Rulesets.Difficulty.Utils;
@@ -31,6 +32,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
 
             var currObj = (OsuDifficultyHitObject)current;
             var nextObj = (OsuDifficultyHitObject)current.Next(0);
+            var prevObj = (OsuDifficultyHitObject)current.Previous(0);
 
             double velocity = Math.Max(1, currObj.LazyJumpDistance / currObj.AdjustedDeltaTime); // Only allow velocity to buff
 
@@ -46,7 +48,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 : 0;
 
             double traceableDifficulty = traceable
-                ? calculateTraceableDifficulty(currObj, nextObj, pastObjectDifficultyInfluence, currentVisibleObjectDensity, velocity, constantAngleNerfFactor)
+                ? calculateTraceableDifficulty(currObj, nextObj, prevObj, pastObjectDifficultyInfluence, currentVisibleObjectDensity, velocity, constantAngleNerfFactor)
                 : 0;
 
             double preemptDifficulty = calculatePreemptDifficulty(velocity, constantAngleNerfFactor, currObj.Preempt);
@@ -142,15 +144,48 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             return hiddenDifficulty;
         }
 
-        private static double calculateTraceableDifficulty(OsuDifficultyHitObject currObj, OsuDifficultyHitObject nextObj, double pastObjectDifficultyInfluence, double currentVisibleObjectDensity, double velocity, double constantAngleNerfFactor)
+        private static double calculateTraceableDifficulty(OsuDifficultyHitObject currObj, OsuDifficultyHitObject nextObj, OsuDifficultyHitObject prevObj, double pastObjectDifficultyInfluence, double currentVisibleObjectDensity, double velocity, double constantAngleNerfFactor)
         {
             // Account for both past and current densities
             double densityFactor = Math.Pow(currentVisibleObjectDensity + (pastObjectDifficultyInfluence / 2.5), 3.3) * 3;
 
-            double traceableDifficulty = densityFactor * constantAngleNerfFactor * velocity * 0.01;
+            double traceableDifficulty = 0.25 + densityFactor * constantAngleNerfFactor * velocity * 0.01;
 
             // Apply a soft cap to general TC reading to account for partial memorization
             traceableDifficulty = Math.Pow(traceableDifficulty, 0.4) * traceable_multiplier;
+
+            // Slightly buff TC when the density is low, and there are no sliders in recent gameplay
+            // This buffs TC when not enough are circles are consistently on the playfield to ensure consistent circle size memory
+            if (prevObj != null)
+            {
+                // Add base difficulty if the first object after a break is a circle
+                if ((currObj.AdjustedDeltaTime >= currObj.Preempt + 2500) && (currObj.BaseObject is HitCircle) && !(nextObj.BaseObject is Slider))
+                    traceableDifficulty += 1.75;
+
+                // Calculate the radial uncertainty of the current circle
+                // Heavily decrease uncertainty if sliders were visible recently
+                double traceableUncertainty = 1;
+
+                foreach (var loopObj in retrievePastVisibleObjects(currObj))
+                {
+                    double timeBetweenCurrAndLoopObj = currObj.StartTime - loopObj.StartTime;
+
+                    if (loopObj.BaseObject is Slider)
+                    {
+                        traceableUncertainty *= DifficultyCalculationUtils.Smootherstep(timeBetweenCurrAndLoopObj, Math.Min(1000, currObj.Preempt/2), currObj.Preempt);
+                        traceableUncertainty *= 0.5;
+                    }
+                    else if (loopObj.BaseObject is HitCircle)
+                    {
+                        traceableUncertainty *= DifficultyCalculationUtils.Smootherstep(timeBetweenCurrAndLoopObj, 0, currObj.Preempt * 0.75);
+                        traceableUncertainty *= 0.9;
+                    }
+                }
+                traceableDifficulty *= 1 + (2 * traceableUncertainty);
+            }
+
+            // Buff TC when circles are close together such that the approach circles overlap.
+            // Reduce the buff (to 0) when the hitcircles are too close together or too far apart to be overlapping.
             if (nextObj != null)
             {
                 // Calculates how much the following circle overlaps with the current one
@@ -162,8 +197,13 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 futureOverlap *= DifficultyCalculationUtils.Smootherstep(nextObj.JumpDistance, nextCircleRadius - 50, distance_influence_threshold);
                 traceableDifficulty *= 1 + futureOverlap;
             }
+
+            if (currObj.BaseObject is Slider)
+                traceableDifficulty *= 0.5;
+
             return traceableDifficulty;
         }
+
         private static double getPastObjectDifficultyInfluence(OsuDifficultyHitObject currObj)
         {
             double pastObjectDifficultyInfluence = 0;
