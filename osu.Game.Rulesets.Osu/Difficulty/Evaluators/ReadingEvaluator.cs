@@ -145,7 +145,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
         private static double calculateTraceableDifficulty(OsuDifficultyHitObject currObj, OsuDifficultyHitObject nextObj, double pastObjectDifficultyInfluence, double currentVisibleObjectDensity, double velocity, double constantAngleNerfFactor)
         {
             // Account for both past and current densities
-            double densityFactor = Math.Pow(currentVisibleObjectDensity + pastObjectDifficultyInfluence, 3.3) * 3;
+            double densityFactor = Math.Pow(currentVisibleObjectDensity + (pastObjectDifficultyInfluence / 2.5), 3.3) * 3;
 
             double traceableDifficulty = densityFactor * constantAngleNerfFactor * velocity * 0.01;
 
@@ -155,11 +155,11 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             {
                 // Calculates how much the following circle overlaps with the current one
                 double nextCircleRadius = ((3 * (nextObj.AdjustedDeltaTime / nextObj.Preempt)) + 1) * 50;
-                double futureOverlap = Math.Sqrt(Math.Max(0, nextCircleRadius + 75 - nextObj.LazyJumpDistance));
+                double futureOverlap = Math.Sqrt(Math.Max(0, nextCircleRadius + 75 - nextObj.JumpDistance));
 
                 // Reduce difficulty if movement to next object is small
                 // Reduce difficulty if next object envelops current object
-                futureOverlap *= DifficultyCalculationUtils.Smootherstep(nextObj.LazyJumpDistance, nextCircleRadius - 50, distance_influence_threshold);
+                futureOverlap *= DifficultyCalculationUtils.Smootherstep(nextObj.JumpDistance, nextCircleRadius - 50, distance_influence_threshold);
                 traceableDifficulty *= 1 + futureOverlap;
             }
             return traceableDifficulty;
