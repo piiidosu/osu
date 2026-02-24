@@ -18,7 +18,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
         private const double reading_window_size = 3000; // 3 seconds
         private const double distance_influence_threshold = OsuDifficultyHitObject.NORMALISED_DIAMETER * 1.5; // 1.5 circles distance between centers
         private const double hidden_multiplier = 0.28;
-        private const double traceable_multiplier = 1;
+        private const double traceable_multiplier = 1.2;
         private const double density_multiplier = 2.4;
         private const double density_difficulty_base = 2.5;
         private const double preempt_balancing_factor = 140000;
@@ -199,7 +199,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             {
                 // Calculates how much the following circle overlaps with the current one
                 double nextCircleRadius = ((3 * (nextObj.AdjustedDeltaTime / nextObj.Preempt)) + 1) * 50;
-                double futureOverlap = Math.Pow(Math.Max(0, nextCircleRadius + 75 - nextObj.JumpDistance), 0.4);
+                double futureOverlap = Math.Pow(Math.Max(0, nextCircleRadius + 75 - nextObj.JumpDistance), 0.3) * 0.8;
 
                 // Reduce difficulty if movement to next object is small
                 // Reduce difficulty if next object envelops current object
@@ -223,7 +223,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             }
 
             // Add slight bonus if the AR is above 8
-            traceableDifficulty *= 1 + (0.1 * Math.Clamp(1 - ((currObj.Preempt - 450) / 300), 0, 1));
+            traceableDifficulty *= 1 + (0.15 * Math.Clamp(1 - (Math.Abs(currObj.Preempt - 450) / 300), 0, 1));
 
             if (currObj.BaseObject is Slider)
                 traceableDifficulty *= 0.5;
