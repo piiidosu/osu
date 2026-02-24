@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using osu.Framework.Extensions.ObjectExtensions;
 using osu.Game.Rulesets.Difficulty.Preprocessing;
 using osu.Game.Rulesets.Difficulty.Utils;
@@ -17,7 +18,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
         private const double reading_window_size = 3000; // 3 seconds
         private const double distance_influence_threshold = OsuDifficultyHitObject.NORMALISED_DIAMETER * 1.5; // 1.5 circles distance between centers
         private const double hidden_multiplier = 0.28;
-        private const double traceable_multiplier = 1;
+        private const double traceable_multiplier = 2;
         private const double density_multiplier = 2.4;
         private const double density_difficulty_base = 2.5;
         private const double preempt_balancing_factor = 140000;
@@ -147,9 +148,9 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
         private static double calculateTraceableDifficulty(OsuDifficultyHitObject currObj, OsuDifficultyHitObject nextObj, OsuDifficultyHitObject prevObj, double pastObjectDifficultyInfluence, double currentVisibleObjectDensity, double velocity, double constantAngleNerfFactor)
         {
             // Account for both past and current densities
-            double densityFactor = Math.Pow(currentVisibleObjectDensity + (pastObjectDifficultyInfluence / 2.5), 3.3) * 3;
+            double densityFactor = Math.Pow(currentVisibleObjectDensity + pastObjectDifficultyInfluence, 3.3) * 3;
 
-            double traceableDifficulty = 0.25 + densityFactor * constantAngleNerfFactor * velocity * 0.01;
+            double traceableDifficulty = 0.25 + densityFactor * constantAngleNerfFactor * Math.Pow(velocity, 0.8) * 0.01;
 
             // Apply a soft cap to general TC reading to account for partial memorization
             traceableDifficulty = Math.Pow(traceableDifficulty, 0.4) * traceable_multiplier;
@@ -158,13 +159,17 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             // This buffs TC when not enough are circles are consistently on the playfield to ensure consistent circle size memory
             if (prevObj != null)
             {
-                // Add base difficulty if the first object after a break is a circle
-                if ((currObj.AdjustedDeltaTime >= currObj.Preempt + 2500) && (currObj.BaseObject is HitCircle) && !(nextObj.BaseObject is Slider))
+                // Add base difficulty if the first object after a break is a circle, or if it is after a very long spinner
+                if (((currObj.AdjustedDeltaTime >= currObj.Preempt + 2000) || (currObj.AdjustedDeltaTime + prevObj.AdjustedDeltaTime >= currObj.Preempt + 2000))
+                                && (currObj.BaseObject is HitCircle) && !(nextObj.BaseObject is Slider))
                     traceableDifficulty += 1.75;
+                    return traceableDifficulty;
 
                 // Calculate the radial uncertainty of the current circle
                 // Heavily decrease uncertainty if sliders were visible recently
                 double traceableUncertainty = 1;
+                if (currObj.BaseObject is Slider)
+                    traceableUncertainty *= 0.1;
 
                 foreach (var loopObj in retrievePastVisibleObjects(currObj))
                 {
@@ -172,7 +177,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
 
                     if (loopObj.BaseObject is Slider)
                     {
-                        traceableUncertainty *= DifficultyCalculationUtils.Smootherstep(timeBetweenCurrAndLoopObj, Math.Min(1000, currObj.Preempt/2), currObj.Preempt);
+                        traceableUncertainty *= DifficultyCalculationUtils.Smootherstep(timeBetweenCurrAndLoopObj, Math.Min(1000, currObj.Preempt/2.5), currObj.Preempt);
                         traceableUncertainty *= 0.5;
                     }
                     else if (loopObj.BaseObject is HitCircle)
@@ -181,6 +186,11 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                         traceableUncertainty *= 0.9;
                     }
                 }
+                // Increase uncertainty because TC
+                double preemptFactor = Math.Pow(Math.Abs(currObj.Preempt - 600) / 1000, 1.6) * 0.1;
+                traceableUncertainty += Math.Sqrt(preemptFactor);
+
+                traceableDifficulty += Math.Pow(preemptFactor, 0.4);
                 traceableDifficulty *= 1 + (2 * traceableUncertainty);
             }
 
@@ -190,11 +200,31 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             {
                 // Calculates how much the following circle overlaps with the current one
                 double nextCircleRadius = ((3 * (nextObj.AdjustedDeltaTime / nextObj.Preempt)) + 1) * 50;
-                double futureOverlap = Math.Sqrt(Math.Max(0, nextCircleRadius + 75 - nextObj.JumpDistance));
+                double futureOverlap = Math.Pow(Math.Max(0, nextCircleRadius + 75 - nextObj.JumpDistance), 0.4);
 
                 // Reduce difficulty if movement to next object is small
                 // Reduce difficulty if next object envelops current object
-                futureOverlap *= DifficultyCalculationUtils.Smootherstep(nextObj.JumpDistance, nextCircleRadius - 50, distance_influence_threshold);
+                double envelop_distance_tolerance = 10;
+                futureOverlap *= DifficultyCalculationUtils.Smootherstep(nextObj.JumpDistance, nextCircleRadius + envelop_distance_tolerance - 50, distance_influence_threshold);
+
+                // Reduce difficulty if objects are barely overlapping
+                futureOverlap *= 1 - DifficultyCalculationUtils.Smootherstep(nextObj.JumpDistance - (nextCircleRadius + 50), 0, 40);
+
+                // Reduce difficulty if the movement is close to linear
+                double angle = -10;
+                OsuDifficultyHitObject nextnextObj = (OsuDifficultyHitObject)currObj.Next(1);
+                if (nextObj.Angle != null)
+                    angle = nextObj.Angle.Value;
+                if ((currObj.Angle != null) && (angle != -10))
+                    angle = Math.Max(angle, currObj.Angle.Value);
+                else if (currObj.Angle != null)
+                    angle = currObj.Angle.Value;
+                if ((nextnextObj.Angle != null) && (angle != -10))
+                    angle = Math.Max(angle, nextnextObj.Angle.Value);
+                else if (nextnextObj.Angle != null)
+                    angle = nextnextObj.Angle.Value;
+                futureOverlap *= 1 - (DifficultyCalculationUtils.Smootherstep(angle, 160, 180) / 4);
+
                 traceableDifficulty *= 1 + futureOverlap;
             }
 
