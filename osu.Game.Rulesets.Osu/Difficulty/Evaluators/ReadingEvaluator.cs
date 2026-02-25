@@ -148,7 +148,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
         private static double calculateTraceableDifficulty(OsuDifficultyHitObject currObj, OsuDifficultyHitObject nextObj, OsuDifficultyHitObject prevObj, double pastObjectDifficultyInfluence, double currentVisibleObjectDensity, double velocity, double constantAngleNerfFactor)
         {
             // Account for both past and current densities
-            double densityFactor = Math.Pow(Math.Pow(currentVisibleObjectDensity + pastObjectDifficultyInfluence, 0.8), 3.3) * 3;
+            double densityFactor = Math.Pow(Math.Pow(Math.Pow(currentVisibleObjectDensity, 0.95) + pastObjectDifficultyInfluence, 0.8), 3.3) * 3;
 
             double traceableDifficulty = 0.25 + (densityFactor * constantAngleNerfFactor * velocity * 0.01);
 
@@ -159,16 +159,14 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             // This buffs TC when not enough are circles are consistently on the playfield to ensure consistent circle size memory
             if (prevObj != null)
             {
-                // Add base difficulty if the first object after a break is a circle, or if it is after a very long spinner
-                if (((currObj.AdjustedDeltaTime >= (currObj.Preempt + 2000)) || ((currObj.AdjustedDeltaTime + prevObj.AdjustedDeltaTime >= (currObj.Preempt + 2000)) && (prevObj.BaseObject is Spinner))) && (currObj.BaseObject is HitCircle) && !(nextObj.BaseObject is Slider))
+                // Add significant base difficulty if the first object after a break is a circle, or if it is after a very long spinner
+                // Do not give additional bonuses if this is the case
+                if (((currObj.AdjustedDeltaTime >= (currObj.Preempt + 2000)) || ((currObj.AdjustedDeltaTime + prevObj.AdjustedDeltaTime >= (currObj.Preempt + 2000)) && (prevObj.BaseObject is Spinner))) && (currObj.BaseObject is HitCircle) && (!(nextObj.BaseObject is Slider) || (nextObj.AdjustedDeltaTime >= nextObj.Preempt)))
                     {
                     traceableDifficulty += 1.75;
                     return traceableDifficulty;
                     }
-            }
 
-            if (prevObj != null)
-            {
                 // Calculate the radial uncertainty of the current circle
                 // Heavily decrease uncertainty if sliders were visible recently
                 double traceableUncertainty = 1;
