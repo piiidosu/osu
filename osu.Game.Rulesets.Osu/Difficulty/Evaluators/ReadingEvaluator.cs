@@ -210,15 +210,40 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 futureOverlap *= 1 - DifficultyCalculationUtils.Smootherstep(nextObj.JumpDistance - (nextCircleRadius + 50), 0, 40);
 
                 // Reduce difficulty if the movement is close to linear
-                double angle = -10;
+                double angle = 0;
+                double nextAngle = 0;
+                double currAngle = 0;
                 if (nextObj.Angle != null)
+                {
+                    nextAngle = nextObj.Angle.Value;
                     angle = nextObj.Angle.Value;
-                if ((currObj.Angle != null) && (angle != -10))
+                }
+                if ((currObj.Angle != null) && (angle != 0))
+                {
                     angle = Math.Max(angle, currObj.Angle.Value);
+                    currAngle = currObj.Angle.Value;
+                }
                 else if (currObj.Angle != null)
+                {
                     angle = currObj.Angle.Value;
-                futureOverlap *= 1 - (DifficultyCalculationUtils.Smootherstep(angle, 160, 180) / 4);
+                    currAngle = currObj.Angle.Value;
+                }
 
+                futureOverlap *= 1 - (DifficultyCalculationUtils.Smootherstep(angle, 150, 180) / 5);
+
+                // Reduce difficulty if angles are similar
+                // Reduce difficulty if angles are wide and similar
+                if ((currObj.Angle != null) && (nextObj.Angle != null))
+                {
+                    futureOverlap *= 0.9 + (DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 0, 40) / 10);
+                    futureOverlap *= 0.9 + (DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 0, 40) / 10 * DifficultyCalculationUtils.Smootherstep(angle, 150, 180));
+                }
+
+                // Increase difficulty if angle change is large
+                if ((currObj.Angle != null) && (nextObj.Angle != null))
+                {
+                    futureOverlap *= 1 + (0.25 * DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 60, 120));
+                }
                 traceableDifficulty *= 1 + futureOverlap;
             }
 
