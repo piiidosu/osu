@@ -10,7 +10,6 @@ using osu.Game.Rulesets.Difficulty.Preprocessing;
 using osu.Game.Rulesets.Difficulty.Utils;
 using osu.Game.Rulesets.Osu.Difficulty.Preprocessing;
 using osu.Game.Rulesets.Osu.Objects;
-using osu.Framework.Logging;
 
 namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
 {
@@ -163,7 +162,6 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
 
             // Slightly buff TC when the density is low, and there are no sliders in recent gameplay
             // This buffs TC when not enough are circles are consistently on the playfield to ensure consistent circle size memory
-            double traceableUncertainty = 1;
             if (prevObj != null)
             {
                 // Add significant base difficulty if the first object after a break is a circle, or if it is after a very long spinner
@@ -180,6 +178,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 // Calculate the radial uncertainty of the current circle
                 // Heavily decrease uncertainty if sliders were visible recently
                 // Decrease uncertainty for each recent object
+                double traceableUncertainty = 1;
                 if (currObj.BaseObject is Slider || prevObj.BaseObject is Slider)
                     traceableUncertainty *= 0.2;
 
@@ -203,12 +202,11 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
 
             // Buff TC when circles are close together such that the approach circles overlap.
             // Reduce the buff (to 0) when the hitcircles are too close together or too far apart to be overlapping.
-            double futureOverlap = 0;
             if (nextObj != null)
             {
                 // Calculates how much the following circle overlaps with the current one
                 double nextCircleRadius = ((3 * (nextObj.AdjustedDeltaTime / nextObj.Preempt)) + 1) * 50;
-                futureOverlap = Math.Pow(Math.Max(0, nextCircleRadius + 75 - nextObj.JumpDistance), 0.3) * 0.8;
+                double futureOverlap = Math.Pow(Math.Max(0, nextCircleRadius + 75 - nextObj.JumpDistance), 0.3) * 0.8;
 
                 // Reduce difficulty if movement to next object is small
                 // Reduce difficulty if next object envelops current object
@@ -257,11 +255,6 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
 
             if (currObj.BaseObject is Slider)
                 traceableDifficulty *= 0.5;
-
-            if (traceableDifficulty >= 6)
-            {
-                Logger.Log($"[{currObj.StartTime} {traceableUncertainty} {futureOverlap} {traceableDifficulty}]");
-            }
 
             return traceableDifficulty;
         }
