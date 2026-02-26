@@ -151,7 +151,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             // Reduce density difficulty for future linear movement
             double densityFactor = Math.Pow(Math.Pow(Math.Pow(currentVisibleObjectDensity, 0.95) + pastObjectDifficultyInfluence, 0.8), 3.3) * 3;
 
-            double traceableDifficulty = 0.25 + (densityFactor * constantAngleNerfFactor * Math.Pow(velocity, 1.025) * 0.008);
+            double traceableDifficulty = 0.25 + (densityFactor * constantAngleNerfFactor * Math.Pow(velocity, 1.05) * 0.0075);
 
             // Apply a soft cap to general TC reading to account for partial memorization
             traceableDifficulty = Math.Pow(traceableDifficulty, 0.4) * traceable_multiplier;
