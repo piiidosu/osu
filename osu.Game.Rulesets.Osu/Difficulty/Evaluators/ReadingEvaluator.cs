@@ -149,9 +149,9 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
         {
             // Account for both past and current densities
             // Reduce density difficulty for future linear movement
-            double densityFactor = Math.Pow(Math.Pow(Math.Pow(currentVisibleObjectDensity, 0.95) + pastObjectDifficultyInfluence, 0.8), 3.3) * 3;
+            double densityFactor = Math.Pow(Math.Pow(Math.Pow(currentVisibleObjectDensity, 0.9) + pastObjectDifficultyInfluence, 0.8), 3.3) * 3;
 
-            double traceableDifficulty = 0.25 + (densityFactor * constantAngleNerfFactor * Math.Pow(velocity, 1.05) * 0.01);
+            double traceableDifficulty = 0.25 + (densityFactor * constantAngleNerfFactor * Math.Pow(velocity, 1.1) * 0.01);
 
             // Apply a soft cap to general TC reading to account for partial memorization
             traceableDifficulty = Math.Pow(traceableDifficulty, 0.4) * traceable_multiplier;
@@ -175,7 +175,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 // Heavily decrease uncertainty if sliders were visible recently
                 // Decrease uncertainty for each recent object
                 double traceableUncertainty = 1;
-                if (currObj.BaseObject is Slider)
+                if (currObj.BaseObject is Slider || prevObj.BaseObject is Slider)
                     traceableUncertainty *= 0.2;
 
                 foreach (var loopObj in retrievePastVisibleObjects(currObj))
@@ -213,7 +213,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 futureOverlap *= 1 - DifficultyCalculationUtils.Smootherstep(nextObj.JumpDistance - (nextCircleRadius + 50), 0, 40);
 
                 // Reduce difficulty if the movement is close to linear
-                double angle = 0;
+                double angle = -10;
                 double nextAngle = 0;
                 double currAngle = 0;
                 if (nextObj.Angle != null)
@@ -221,7 +221,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                     nextAngle = nextObj.Angle.Value;
                     angle = nextObj.Angle.Value;
                 }
-                if ((currObj.Angle != null) && (angle != 0))
+                if ((currObj.Angle != null) && (angle != -10))
                 {
                     angle = Math.Max(angle, currObj.Angle.Value);
                     currAngle = currObj.Angle.Value;
@@ -232,19 +232,18 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                     currAngle = currObj.Angle.Value;
                 }
 
-                futureOverlap *= 1 - (DifficultyCalculationUtils.Smootherstep(angle, 150, 180) / 5);
+                double linearity = DifficultyCalculationUtils.Smootherstep(angle, 170, 180);
+                futureOverlap *= 1 - (DifficultyCalculationUtils.Smootherstep(angle, 150, 180) / 5) - (linearity * 0.1);
 
-                // Reduce difficulty if angles are similar
-                // Reduce difficulty if angles are wide and similar
+
                 if ((currObj.Angle != null) && (nextObj.Angle != null))
                 {
-                    futureOverlap *= 0.95 + (DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 0, 40) / 20);
-                    futureOverlap *= 0.95 + (DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 0, 40) / 20 * DifficultyCalculationUtils.Smootherstep(angle, 150, 180));
-                }
+                    // Reduce difficulty if angles are similar
+                    // Reduce difficulty if angles are wide and similar
+                    futureOverlap *= 0.95 + (DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 0, 40) / 20) - (linearity * 0.1);
+                    futureOverlap *= 0.95 + (DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 0, 40) / 20 * DifficultyCalculationUtils.Smootherstep(angle, 150, 180)) - (linearity * 0.1);
 
-                // Increase difficulty if angle change is large
-                if ((currObj.Angle != null) && (nextObj.Angle != null))
-                {
+                    // Increase difficulty if angle change is large
                     futureOverlap *= 1 + (0.25 * DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 40, 120));
                 }
                 traceableDifficulty *= 1 + futureOverlap;
