@@ -179,8 +179,8 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 // Heavily decrease uncertainty if sliders were visible recently
                 // Decrease uncertainty for each recent object
                 double traceableUncertainty = 1;
-                if (currObj.BaseObject is Slider || prevObj.BaseObject is Slider)
-                    traceableUncertainty *= 0.2;
+                if (currObj.BaseObject is Slider || prevObj.BaseObject is Slider || nextObj.BaseObject is Slider)
+                    traceableUncertainty *= 0.25;
 
                 foreach (var loopObj in retrievePastVisibleObjects(currObj))
                 {
@@ -251,6 +251,10 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                     futureOverlap *= 1 + (0.25 * DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 40, 120));
                 }
                 traceableDifficulty *= Math.Pow(1 + futureOverlap, 0.9);
+
+                // Increase difficulty for very acute angles
+
+                traceableDifficulty *= 1 + (0.1 * DifficultyCalculationUtils.Smootherstep(currAngle, 0 , 30));
             }
 
             if (currObj.BaseObject is Slider)
