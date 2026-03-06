@@ -166,8 +166,8 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             {
                 // Add significant base difficulty if the first object after a break is a circle, or if it is after a very long spinner
                 // Do not give additional bonuses if this is the case
-                if (((currObj.AdjustedDeltaTime >= (currObj.Preempt + 2000)) || ((currObj.AdjustedDeltaTime + prevObj.AdjustedDeltaTime >= (currObj.Preempt + 2000))
-                        && (prevObj.BaseObject is Spinner)))
+                if (((currObj.AdjustedDeltaTime >= (currObj.Preempt + 2000))
+                        || ((currObj.AdjustedDeltaTime + prevObj.AdjustedDeltaTime >= (currObj.Preempt + 2000)) && (prevObj.BaseObject is Spinner)))
                         && (currObj.BaseObject is HitCircle)
                         && (!(nextObj.BaseObject is Slider) || (nextObj.AdjustedDeltaTime >= nextObj.Preempt)))
                     {
@@ -211,7 +211,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 // Reduce difficulty if movement to next object is small
                 // Reduce difficulty if next object envelops current object
                 double envelop_distance_tolerance = 10;
-                futureOverlap *= DifficultyCalculationUtils.Smootherstep(nextObj.JumpDistance, nextCircleRadius + envelop_distance_tolerance - 50, distance_influence_threshold);
+                futureOverlap *= DifficultyCalculationUtils.Smootherstep(nextObj.JumpDistance, Math.Min(nextCircleRadius + envelop_distance_tolerance - 50, distance_influence_threshold), distance_influence_threshold);
 
                 // Reduce difficulty if objects are barely overlapping
                 futureOverlap *= 1 - DifficultyCalculationUtils.Smootherstep(nextObj.JumpDistance - (nextCircleRadius + 50), 0, 40);
