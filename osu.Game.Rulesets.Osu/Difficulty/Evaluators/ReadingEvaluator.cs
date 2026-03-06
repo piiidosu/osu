@@ -179,8 +179,11 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 // Heavily decrease uncertainty if sliders were visible recently
                 // Decrease uncertainty for each recent object
                 double traceableUncertainty = 1;
-                if (currObj.BaseObject is Slider || prevObj.BaseObject is Slider || nextObj.BaseObject is Slider)
-                    traceableUncertainty *= 0.25;
+                if (nextObj != null)
+                {
+                    if (currObj.BaseObject is Slider || prevObj.BaseObject is Slider || nextObj.BaseObject is Slider)
+                        traceableUncertainty *= 0.25;
+                }
 
                 foreach (var loopObj in retrievePastVisibleObjects(currObj))
                 {
@@ -211,7 +214,8 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 // Reduce difficulty if movement to next object is small
                 // Reduce difficulty if next object envelops current object
                 double envelop_distance_tolerance = 10;
-                futureOverlap *= DifficultyCalculationUtils.Smootherstep(nextObj.JumpDistance, Math.Min(nextCircleRadius + envelop_distance_tolerance - 50, distance_influence_threshold), distance_influence_threshold);
+                if (nextCircleRadius + envelop_distance_tolerance - 50 < distance_influence_threshold)
+                    futureOverlap *= DifficultyCalculationUtils.Smootherstep(nextObj.JumpDistance, nextCircleRadius + envelop_distance_tolerance - 50, distance_influence_threshold);
 
                 // Reduce difficulty if objects are barely overlapping
                 futureOverlap *= 1 - DifficultyCalculationUtils.Smootherstep(nextObj.JumpDistance - (nextCircleRadius + 50), 0, 40);
@@ -253,8 +257,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 traceableDifficulty *= Math.Pow(1 + futureOverlap, 0.9);
 
                 // Increase difficulty for very acute angles
-
-                traceableDifficulty *= 1 + (0.1 * DifficultyCalculationUtils.Smootherstep(currAngle, 0 , 30));
+                traceableDifficulty *= 1 + (0.1 * DifficultyCalculationUtils.Smootherstep(currAngle, 0 , 20));
             }
 
             if (currObj.BaseObject is Slider)
