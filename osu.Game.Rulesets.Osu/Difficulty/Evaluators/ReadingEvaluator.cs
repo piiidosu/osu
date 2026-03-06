@@ -18,7 +18,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
         private const double reading_window_size = 3000; // 3 seconds
         private const double distance_influence_threshold = OsuDifficultyHitObject.NORMALISED_DIAMETER * 1.5; // 1.5 circles distance between centers
         private const double hidden_multiplier = 0.28;
-        private const double traceable_multiplier = 1.2;
+        private const double traceable_multiplier = 1.45;
         private const double density_multiplier = 2.4;
         private const double density_difficulty_base = 2.5;
         private const double preempt_balancing_factor = 140000;
@@ -154,7 +154,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             double traceableDifficulty = 0.25 + (densityFactor * constantAngleNerfFactor * Math.Pow(velocity, 1.1) * 0.01);
 
             // Apply a soft cap to general TC reading to account for partial memorization
-            traceableDifficulty = Math.Pow(traceableDifficulty, 0.4) * traceable_multiplier;
+            traceableDifficulty = Math.Pow(traceableDifficulty, 0.36) * traceable_multiplier;
 
             // Add slight bonus if the AR is above 8
             traceableDifficulty *= 1 + (0.15 * Math.Clamp(1 - (Math.Abs(currObj.Preempt - 450) / 300), 0, 1));
@@ -171,7 +171,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                         && (currObj.BaseObject is HitCircle)
                         && (!(nextObj.BaseObject is Slider) || (nextObj.AdjustedDeltaTime >= nextObj.Preempt)))
                     {
-                    traceableDifficulty += 1.75;
+                    traceableDifficulty += 2.25;
                     return traceableDifficulty;
                     }
 
@@ -197,10 +197,10 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                     else if (loopObj.BaseObject is HitCircle)
                     {
                         traceableUncertainty *= DifficultyCalculationUtils.Smootherstep(timeBetweenCurrAndLoopObj, 0, currObj.Preempt * 0.75);
-                        traceableUncertainty *= 0.85;
+                        traceableUncertainty *= 0.875;
                     }
                 }
-                traceableDifficulty *= Math.Pow(1 + (2 * traceableUncertainty), 0.9);
+                traceableDifficulty *= 1 + (2 * traceableUncertainty);
             }
 
             // Buff TC when circles are close together such that the approach circles overlap.
@@ -248,13 +248,13 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 {
                     // Reduce difficulty if angles are similar
                     // Reduce difficulty if angles are wide and similar
-                    futureOverlap *= 0.95 + (DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 0, 40) / 20) - (linearity * 0.1);
-                    futureOverlap *= 0.95 + (DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 0, 40) / 20 * DifficultyCalculationUtils.Smootherstep(angle, 150, 180)) - (linearity * 0.1);
+                    futureOverlap *= 0.90 + (DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 0, 40) / 10) - (linearity * 0.1);
+                    futureOverlap *= 0.95 + (DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 0, 40) / 20 * (1 - DifficultyCalculationUtils.Smootherstep(angle, 150, 180))) - (linearity * 0.1);
 
                     // Increase difficulty if angle change is large
                     futureOverlap *= 1 + (0.25 * DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 40, 120));
                 }
-                traceableDifficulty *= Math.Pow(1 + futureOverlap, 0.9);
+                traceableDifficulty *= Math.Pow(1 + futureOverlap, 0.85);
 
                 // Increase difficulty for very acute angles
                 traceableDifficulty *= 1 + (0.1 * DifficultyCalculationUtils.Smootherstep(currAngle, 0 , 20));
