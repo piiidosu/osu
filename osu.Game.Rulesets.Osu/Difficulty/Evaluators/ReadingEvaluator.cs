@@ -33,6 +33,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
 
             var currObj = (OsuDifficultyHitObject)current;
             var nextObj = (OsuDifficultyHitObject)current.Next(0);
+            var nextnextObj = (OsuDifficultyHitObject)current.Next(1);
             var prevObj = (OsuDifficultyHitObject)current.Previous(0);
 
             double velocity = Math.Max(1, currObj.LazyJumpDistance / currObj.AdjustedDeltaTime); // Only allow velocity to buff
@@ -49,7 +50,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 : 0;
 
             double traceableDifficulty = traceable
-                ? calculateTraceableDifficulty(currObj, nextObj, prevObj, pastObjectDifficultyInfluence, currentVisibleObjectDensity, velocity, constantAngleNerfFactor)
+                ? calculateTraceableDifficulty(currObj, nextObj, nextnextObj, prevObj, pastObjectDifficultyInfluence, currentVisibleObjectDensity, velocity, constantAngleNerfFactor)
                 : 0;
 
             double preemptDifficulty = calculatePreemptDifficulty(velocity, constantAngleNerfFactor, currObj.Preempt);
@@ -145,7 +146,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             return hiddenDifficulty;
         }
 
-        private static double calculateTraceableDifficulty(OsuDifficultyHitObject currObj, OsuDifficultyHitObject nextObj, OsuDifficultyHitObject prevObj, double pastObjectDifficultyInfluence, double currentVisibleObjectDensity, double velocity, double constantAngleNerfFactor)
+        private static double calculateTraceableDifficulty(OsuDifficultyHitObject currObj, OsuDifficultyHitObject nextObj, OsuDifficultyHitObject nextnextObj, OsuDifficultyHitObject prevObj, double pastObjectDifficultyInfluence, double currentVisibleObjectDensity, double velocity, double constantAngleNerfFactor)
         {
             // Account for both past and current densities
             // Reduce density difficulty for future linear movement
@@ -156,7 +157,20 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             // Apply a soft cap to general TC reading to account for partial memorization
             traceableDifficulty = Math.Pow(traceableDifficulty, 0.36) * traceable_multiplier;
 
-            // Add slight bonus if the AR is above 8
+            // Increase difficulty for back and forth overlapping movement
+            if ((nextnextObj != null) && (nextnextObj.Angle != null) && (nextObj != null))
+            {
+                double nextVelocityVector = nextObj.JumpDistance / Math.Max(nextObj.AdjustedDeltaTime, 10);
+                double nextnextVelocityVector = nextnextObj.JumpDistance / Math.Max(nextnextObj.AdjustedDeltaTime, 10);
+
+                if ((nextnextVelocityVector == 0) || (nextVelocityVector == 0));
+                else if (nextnextVelocityVector >= nextVelocityVector)
+                    traceableDifficulty *= 1 + (0.025 * ((1 - DifficultyCalculationUtils.Smootherstep(nextnextObj.Angle.Value, 0 , 40)) * Math.Pow(nextVelocityVector / nextnextVelocityVector, 4)) * Math.Pow(velocity, 1.5));
+                else
+                    traceableDifficulty *= 1 + (0.025 * ((1 - DifficultyCalculationUtils.Smootherstep(nextnextObj.Angle.Value, 0 , 40)) * Math.Pow(nextnextVelocityVector / nextVelocityVector, 4)) * Math.Pow(velocity, 1.5));
+            }
+
+            // Apply a slight bonus if the AR is above 8
             traceableDifficulty *= 1 + (0.15 * Math.Clamp(1 - (Math.Abs(currObj.Preempt - 450) / 300), 0, 1));
 
 
@@ -254,10 +268,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                     // Increase difficulty if angle change is large
                     futureOverlap *= 1 + (0.25 * DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 40, 120));
                 }
-                traceableDifficulty *= Math.Pow(1 + futureOverlap, 0.85);
-
-                // Increase difficulty for very acute angles
-                traceableDifficulty *= 1 + (0.1 * DifficultyCalculationUtils.Smootherstep(currAngle, 0 , 20));
+                traceableDifficulty *= Math.Pow(1 + futureOverlap, 0.8);
             }
 
             if (currObj.BaseObject is Slider)
