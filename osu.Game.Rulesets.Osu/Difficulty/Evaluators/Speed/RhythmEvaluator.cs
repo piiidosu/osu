@@ -1,248 +1,283 @@
-﻿// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
-// See the LICENCE file in the repository root for full licence text.
-
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Numerics.Tensors;
 using osu.Game.Rulesets.Difficulty.Preprocessing;
-using osu.Game.Rulesets.Difficulty.Utils;
 using osu.Game.Rulesets.Osu.Difficulty.Preprocessing;
 using osu.Game.Rulesets.Osu.Objects;
-using osu.Game.Rulesets.Scoring;
 
 namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators.Speed
 {
     public static class RhythmEvaluator
     {
-        private const int history_time_max = 5 * 1000; // 5 seconds
-        private const int history_objects_max = 32;
-        private const double rhythm_overall_multiplier = 0.8;
-        private const double rhythm_ratio_multiplier = 32.0;
+        private static readonly ConditionalWeakTable<DifficultyHitObject, ModelResult> inferenceCache = new();
 
-        /// <summary>
-        /// Calculates a rhythm multiplier for the difficulty of the tap associated with historic data of the current <see cref="OsuDifficultyHitObject"/>.
-        /// </summary>
+        // Make sure this path is accurate to how you load the file!
+        private static readonly Lazy<SafeOptimizedSSM> ssm = new(() =>
+            new SafeOptimizedSSM(@"C:\ppdev\osu\osu.Game.Rulesets.Osu\Difficulty\Evaluators\Speed\rhythm_weights.bin")
+        );
+
         public static double EvaluateDifficultyOf(DifficultyHitObject current)
         {
-            if (current.BaseObject is Spinner)
-                return 0;
-
-            double rhythmComplexitySum = 0;
-
-            double deltaDifferenceEpsilon = ((OsuDifficultyHitObject)current).HitWindow(HitResult.Great) * 0.3;
-
-            var island = new Island(deltaDifferenceEpsilon);
-            var previousIsland = new Island(deltaDifferenceEpsilon);
-
-            // we can't use dictionary here because we need to compare island with a tolerance
-            // which is impossible to pass into the hash comparer
-            var islandCounts = new List<(Island Island, int Count)>();
-
-            double startRatio = 0; // store the ratio of the current start of an island to buff for tighter rhythms
-
-            bool firstDeltaSwitch = false;
-
-            int historicalNoteCount = Math.Min(current.Index, history_objects_max);
-
-            int rhythmStart = 0;
-
-            while (rhythmStart < historicalNoteCount - 2 && current.StartTime - current.Previous(rhythmStart).StartTime < history_time_max)
-                rhythmStart++;
-
-            OsuDifficultyHitObject prevObj = (OsuDifficultyHitObject)current.Previous(rhythmStart);
-            OsuDifficultyHitObject lastObj = (OsuDifficultyHitObject)current.Previous(rhythmStart + 1);
-
-            // we go from the furthest object back to the current one
-            for (int i = rhythmStart; i > 0; i--)
+            var firstObject = current;
+            while (firstObject.Previous(0) != null)
             {
-                OsuDifficultyHitObject currObj = (OsuDifficultyHitObject)current.Previous(i - 1);
-                if (currObj.BaseObject is Spinner)
-                    continue;
+                firstObject = firstObject.Previous(0);
+            }
 
-                // scales note 0 to 1 from history to now
-                double timeDecay = (history_time_max - (current.StartTime - currObj.StartTime)) / history_time_max;
-                double noteDecay = (double)(historicalNoteCount - i) / historicalNoteCount;
+            if (!inferenceCache.TryGetValue(firstObject, out var modelResult))
+            {
+                modelResult = RunFullMapInference(firstObject);
+                inferenceCache.Add(firstObject, modelResult);
+            }
 
-                double currHistoricalDecay = Math.Min(noteDecay, timeDecay); // either we're limited by time or limited by object count.
+            if (modelResult.DhoToModelIndexMap.TryGetValue(current.Index, out int tokenIndex))
+            {
+                if (tokenIndex == 0)
+                    return 0;
 
-                // Use custom cap value to ensure that at this point delta time is actually zero
-                double currDelta = Math.Max(currObj.DeltaTime, 1e-7);
-                double prevDelta = Math.Max(prevObj.DeltaTime, 1e-7);
-                double lastDelta = Math.Max(lastObj.DeltaTime, 1e-7);
+                int targetDelta = modelResult.TimeDeltas[tokenIndex];
+                int currentType = modelResult.ObjectTypes[tokenIndex];
+                int prevType = modelResult.ObjectTypes[tokenIndex - 1];
 
-                // calculate how much current delta difference deserves a rhythm bonus
-                // this function is meant to reduce rhythm bonus for deltas that are multiples of each other (i.e 100 and 200)
-                double deltaDifference = Math.Max(prevDelta, currDelta) / Math.Min(prevDelta, currDelta);
+                float prob;
 
-                // reduce ratio bonus if delta difference is too big
-                double differenceMultiplier = Math.Clamp(2.0 - deltaDifference / 8.0, 0.0, 1.0);
-
-                double windowPenalty = Math.Min(1, Math.Max(0, Math.Abs(prevDelta - currDelta) - deltaDifferenceEpsilon) / deltaDifferenceEpsilon);
-
-                double effectiveRatio = getEffectiveRatio(deltaDifference) * windowPenalty * differenceMultiplier;
-
-                // if previous object is a slider it might be easier to tap since you don't have to do a whole tapping motion
-                // while a full deltatime might end up some weird ratio the "unpress->tap" motion might be simple
-                // for example a slider-circle-circle pattern should be evaluated as a regular triple and not as a single->double
-                if (prevObj.BaseObject is Slider)
+                // Apply heuristic FIRST to bypass lookup if not needed
+                if (targetDelta >= 511 || currentType == 3 || currentType == 4)
                 {
-                    double sliderLazyEndDelta = currObj.MinimumJumpTime;
-                    double sliderLazyDeltaDifference = Math.Max(sliderLazyEndDelta, currDelta) / Math.Min(sliderLazyEndDelta, currDelta);
-
-                    double sliderRealEndDelta = currObj.LastObjectEndDeltaTime;
-                    double sliderRealDeltaDifference = Math.Max(sliderRealEndDelta, currDelta) / Math.Min(sliderRealEndDelta, currDelta);
-
-                    double sliderEffectiveRatio = Math.Min(getEffectiveRatio(sliderLazyDeltaDifference), getEffectiveRatio(sliderRealDeltaDifference));
-                    effectiveRatio = Math.Min(sliderEffectiveRatio, effectiveRatio);
+                    prob = 1.0f;
                 }
-
-                if (firstDeltaSwitch)
+                else
                 {
-                    if (Math.Abs(prevDelta - currDelta) < deltaDifferenceEpsilon)
+                    // Directly read the exact probability extracted from the model
+                    float rawProb = modelResult.Probabilities[tokenIndex - 1];
+
+                    if (prevType == 3 || prevType == 4)
                     {
-                        // island is still progressing
-                        island.AddDelta((int)currDelta);
+                        prob = Math.Min(1.0f, rawProb * 2.0f);
                     }
                     else
                     {
-                        // bpm change is into slider, this is easy acc window
-                        if (currObj.BaseObject is Slider)
-                            effectiveRatio *= 0.5;
-
-                        // repeated island polarity (2 -> 4, 3 -> 5)
-                        if (island.IsSimilarPolarity(previousIsland))
-                            effectiveRatio *= 0.5;
-
-                        // previous increase happened a note ago, 1/1->1/2-1/4, dont want to buff this.
-                        if (lastDelta > prevDelta + deltaDifferenceEpsilon && prevDelta > currDelta + deltaDifferenceEpsilon)
-                            effectiveRatio *= 0.125;
-
-                        // repeated island size (ex: triplet -> triplet)
-                        // TODO: remove this nerf since its staying here only for balancing purposes because of the flawed ratio calculation
-                        if (previousIsland.DeltaCount == island.DeltaCount)
-                            effectiveRatio *= 0.5;
-
-                        var islandCount = islandCounts.FirstOrDefault(x => x.Island.Equals(island));
-
-                        if (islandCount != default)
-                        {
-                            int countIndex = islandCounts.IndexOf(islandCount);
-
-                            // only add island to island counts if they're going one after another
-                            if (previousIsland.Equals(island))
-                                islandCount.Count++;
-
-                            // repeated island (ex: triplet -> triplet)
-                            double power = DifficultyCalculationUtils.Logistic(island.Delta, maxValue: 2.75, multiplier: 0.24, midpointOffset: 58.33);
-                            effectiveRatio *= Math.Min(3.0 / islandCount.Count, Math.Pow(1.0 / islandCount.Count, power));
-
-                            islandCounts[countIndex] = (islandCount.Island, islandCount.Count);
-                        }
-                        else
-                        {
-                            islandCounts.Add((island, 1));
-                        }
-
-                        // scale down the difficulty if the object is doubletappable
-                        double doubletapness = prevObj.GetDoubletapness(currObj);
-                        effectiveRatio *= 1 - doubletapness * 0.75;
-
-                        rhythmComplexitySum += Math.Sqrt(effectiveRatio * startRatio) * currHistoricalDecay;
-
-                        startRatio = effectiveRatio;
-
-                        previousIsland = island;
-
-                        if (prevDelta + deltaDifferenceEpsilon < currDelta) // we're slowing down, stop counting
-                            firstDeltaSwitch = false; // if we're speeding up, this stays true and we keep counting island size.
-
-                        island = new Island((int)currDelta, deltaDifferenceEpsilon);
+                        prob = rawProb;
                     }
                 }
-                else if (prevDelta > currDelta + deltaDifferenceEpsilon) // we're speeding up
+
+                prob = Math.Max(prob, 1e-10f);
+                return Math.Pow(Math.Max(-Math.Log10(prob) - 0.25, 0), 1.4);
+            }
+
+            return 0;
+        }
+
+        private static ModelResult RunFullMapInference(DifficultyHitObject firstObject)
+        {
+            var allObjects = new List<DifficultyHitObject>();
+            var curr = firstObject;
+            while (curr != null)
+            {
+                allObjects.Add(curr);
+                curr = curr.Next(0);
+            }
+
+            var (objectTypes, timeDeltas, dhoToTokenMap) = GetObjectTokens(allObjects);
+            int[] typesArray = objectTypes.ToArray();
+
+            float[] probabilities = ssm.Value.RunInference(timeDeltas, typesArray, timeDeltas);
+
+            return new ModelResult(probabilities, dhoToTokenMap, typesArray, timeDeltas);
+        }
+
+        private static (List<int> ObjectTypes, int[] TimeDeltas, Dictionary<int, int> Map) GetObjectTokens(IReadOnlyList<DifficultyHitObject> difficultyObjects)
+        {
+            List<int> objectTypes = new List<int>();
+            List<int> timeDeltasList = new List<int>();
+            Dictionary<int, int> dhoToModelIndexMap = new Dictionary<int, int>();
+
+            foreach (var diffObject in difficultyObjects)
+            {
+                var baseObject = diffObject.BaseObject;
+                dhoToModelIndexMap[diffObject.Index] = timeDeltasList.Count;
+
+                double lastObjectEndDeltaTime = diffObject.Previous(0) != null
+                    ? diffObject.StartTime - diffObject.Previous(0).EndTime
+                    : 0;
+
+                if (baseObject is HitCircle)
                 {
-                    // Begin counting island until we change speed again.
-                    firstDeltaSwitch = true;
+                    objectTypes.Add(0); // Circle
+                    timeDeltasList.Add((int)Math.Clamp(lastObjectEndDeltaTime, 0, 511));
+                }
+                else if (baseObject is Slider slider)
+                {
+                    objectTypes.Add(1); // Slider Head
+                    timeDeltasList.Add((int)Math.Clamp(lastObjectEndDeltaTime, 0, 511));
 
-                    // bpm change is into slider, this is easy acc window
-                    if (currObj.BaseObject is Slider)
-                        effectiveRatio *= 0.6;
+                    objectTypes.Add(3); // Slider Tail
+                    timeDeltasList.Add((int)Math.Clamp(diffObject.EndTime - diffObject.StartTime, 0, 511));
+                }
+                else if (baseObject is Spinner spinner)
+                {
+                    objectTypes.Add(4); // Spinner
+                    timeDeltasList.Add((int)Math.Clamp(lastObjectEndDeltaTime + diffObject.EndTime - diffObject.StartTime, 0, 511));
+                }
+            }
 
-                    // bpm change was from a slider, this is easier typically than circle -> circle
-                    // unintentional side effect is that bursts with kicksliders at the ends might have lower difficulty than bursts without sliders
-                    if (prevObj.BaseObject is Slider)
-                        effectiveRatio *= 0.6;
+            return (objectTypes, timeDeltasList.ToArray(), dhoToModelIndexMap);
+        }
 
-                    startRatio = effectiveRatio;
+        private class ModelResult
+        {
+            public readonly float[] Probabilities;
+            public readonly Dictionary<int, int> DhoToModelIndexMap;
+            public readonly int[] ObjectTypes;
+            public readonly int[] TimeDeltas;
 
-                    island = new Island((int)currDelta, deltaDifferenceEpsilon);
+            public ModelResult(float[] probs, Dictionary<int, int> map, int[] objectTypes, int[] timeDeltas)
+            {
+                Probabilities = probs;
+                DhoToModelIndexMap = map;
+                ObjectTypes = objectTypes;
+                TimeDeltas = timeDeltas;
+            }
+        }
+    }
+
+    public class SafeOptimizedSSM
+    {
+        public const int VOCAB_SIZE = 512;
+        private const int D_MODEL = 64;
+        private const int LAYERS = 4;
+
+        private readonly float[] _allWeights;
+
+        private readonly ReadOnlyMemory<float> _embedding;
+        private readonly LayerWeights[] _layers;
+        private readonly ReadOnlyMemory<float> _headWeight;
+        private readonly ReadOnlyMemory<float> _headBias;
+
+        private struct LayerWeights
+        {
+            public ReadOnlyMemory<float> A_bar, B, C, D, NormW, NormB;
+        }
+
+        public SafeOptimizedSSM(string binPath)
+        {
+            byte[] bytes = File.ReadAllBytes(binPath);
+            _allWeights = MemoryMarshal.Cast<byte, float>(bytes).ToArray();
+
+            int offset = 0;
+            _embedding = _allWeights.AsMemory(offset, VOCAB_SIZE * D_MODEL);
+            offset += VOCAB_SIZE * D_MODEL;
+
+            _layers = new LayerWeights[LAYERS];
+            for (int i = 0; i < LAYERS; i++)
+            {
+                _layers[i] = new LayerWeights {
+                    A_bar = _allWeights.AsMemory(offset, D_MODEL),
+                    B = _allWeights.AsMemory(offset + D_MODEL, D_MODEL),
+                    C = _allWeights.AsMemory(offset + D_MODEL * 2, D_MODEL),
+                    D = _allWeights.AsMemory(offset + D_MODEL * 3, D_MODEL),
+                    NormW = _allWeights.AsMemory(offset + D_MODEL * 4, D_MODEL),
+                    NormB = _allWeights.AsMemory(offset + D_MODEL * 5, D_MODEL)
+                };
+                offset += D_MODEL * 6;
+            }
+
+            _headWeight = _allWeights.AsMemory(offset, VOCAB_SIZE * D_MODEL);
+            offset += VOCAB_SIZE * D_MODEL;
+            _headBias = _allWeights.AsMemory(offset, VOCAB_SIZE);
+        }
+
+        public float[] RunInference(int[] tokens, int[] objectTypes, int[] timeDeltas)
+        {
+            int seqLen = tokens.Length;
+
+            // TARGET-ONLY EXTRACTION: Allocate exactly what we need
+            float[] targetedProbs = new float[seqLen];
+
+            // Standard safe stackalloc
+            Span<float> hStates = stackalloc float[LAYERS * D_MODEL];
+            Span<float> x = stackalloc float[D_MODEL];
+            Span<float> logits = stackalloc float[VOCAB_SIZE];
+
+            for (int t = 0; t < seqLen; t++)
+            {
+                _embedding.Span.Slice(tokens[t] * D_MODEL, D_MODEL).CopyTo(x);
+
+                for (int l = 0; l < LAYERS; l++)
+                {
+                    ProcessLayer(l, x, hStates.Slice(l * D_MODEL, D_MODEL));
                 }
 
-                lastObj = prevObj;
-                prevObj = currObj;
-            }
+                if (t + 1 < seqLen)
+                {
+                    int nextType = objectTypes[t + 1];
+                    int nextDelta = timeDeltas[t + 1];
 
-            return Math.Sqrt(4 + rhythmComplexitySum * rhythm_overall_multiplier) / 2.0; // produces multiplier that can be applied to strain. range [1, infinity) (not really though);
+                    // PREDICTIVE SKIPPING: Skip heavy math if heuristic applies
+                    if (nextDelta >= 511 || nextType == 3 || nextType == 4)
+                    {
+                        targetedProbs[t] = 1.0f;
+                    }
+                    else
+                    {
+                        GenerateProbabilities(x, logits);
+                        targetedProbs[t] = logits[nextDelta];
+                    }
+                }
+            }
+            return targetedProbs;
         }
 
-        private static double getEffectiveRatio(double deltaDifference)
+        private void ProcessLayer(int l, Span<float> x, Span<float> h)
         {
-            // Take only the fractional part of the value since we're only interested in punishing multiples
-            double deltaDifferenceFraction = deltaDifference - Math.Truncate(deltaDifference);
+            var lw = _layers[l];
+            ReadOnlySpan<float> a = lw.A_bar.Span;
+            ReadOnlySpan<float> b = lw.B.Span;
+            ReadOnlySpan<float> c = lw.C.Span;
+            ReadOnlySpan<float> d = lw.D.Span;
 
-            return 1.0 + rhythm_ratio_multiplier * Math.Min(0.5, DifficultyCalculationUtils.SmoothstepBellCurve(deltaDifferenceFraction));
+            Span<float> temp = stackalloc float[D_MODEL];
+
+            TensorPrimitives.Multiply(a, h, temp);
+            TensorPrimitives.MultiplyAdd(b, x, temp, h);
+
+            TensorPrimitives.Multiply(c, h, temp);
+            TensorPrimitives.MultiplyAdd(d, x, temp, x);
+
+            ApplyLayerNorm(x, lw.NormW.Span, lw.NormB.Span);
         }
 
-        private class Island : IEquatable<Island>
+        private void ApplyLayerNorm(Span<float> x, ReadOnlySpan<float> w, ReadOnlySpan<float> b)
         {
-            private readonly double deltaDifferenceEpsilon;
+            Span<float> temp = stackalloc float[D_MODEL];
 
-            public Island(double epsilon)
+            float mean = TensorPrimitives.Sum(x) / D_MODEL;
+            TensorPrimitives.Subtract(x, mean, temp);
+
+            float var = TensorPrimitives.Dot(temp, temp) / D_MODEL;
+            float invStd = 1.0f / (float)Math.Sqrt(var + 1e-5f);
+
+            TensorPrimitives.Multiply(temp, invStd, temp);
+            TensorPrimitives.Multiply(temp, w, temp);
+            TensorPrimitives.Add(temp, b, x);
+        }
+
+        private void GenerateProbabilities(ReadOnlySpan<float> x, Span<float> probs)
+        {
+            ReadOnlySpan<float> hw = _headWeight.Span;
+            ReadOnlySpan<float> hb = _headBias.Span;
+
+            for (int i = 0; i < VOCAB_SIZE; i++)
             {
-                deltaDifferenceEpsilon = epsilon;
+                ReadOnlySpan<float> row = hw.Slice(i * D_MODEL, D_MODEL);
+                probs[i] = TensorPrimitives.Dot(x, row) + hb[i];
             }
 
-            public Island(int delta, double epsilon)
-            {
-                deltaDifferenceEpsilon = epsilon;
-                Delta = Math.Max(delta, OsuDifficultyHitObject.MIN_DELTA_TIME);
-                DeltaCount++;
-            }
-
-            public int Delta { get; private set; } = int.MaxValue;
-            public int DeltaCount { get; private set; }
-
-            public void AddDelta(int delta)
-            {
-                if (Delta == int.MaxValue)
-                    Delta = Math.Max(delta, OsuDifficultyHitObject.MIN_DELTA_TIME);
-
-                DeltaCount++;
-            }
-
-            public bool IsSimilarPolarity(Island other)
-            {
-                // single delta islands shouldn't be compared
-                if (DeltaCount <= 1 || other.DeltaCount <= 1)
-                    return false;
-
-                return Math.Abs(Delta - other.Delta) < deltaDifferenceEpsilon &&
-                       DeltaCount % 2 == other.DeltaCount % 2;
-            }
-
-            public bool Equals(Island? other)
-            {
-                if (other == null)
-                    return false;
-
-                return Math.Abs(Delta - other.Delta) < deltaDifferenceEpsilon &&
-                       DeltaCount == other.DeltaCount;
-            }
-
-            public override string ToString()
-            {
-                return $"{Delta}x{DeltaCount}";
-            }
+            TensorPrimitives.SoftMax(probs, probs);
         }
     }
 }
