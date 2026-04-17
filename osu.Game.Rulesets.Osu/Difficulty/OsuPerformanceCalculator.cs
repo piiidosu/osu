@@ -15,6 +15,7 @@ using osu.Game.Rulesets.Osu.Mods;
 using osu.Game.Rulesets.Scoring;
 using osu.Game.Scoring;
 using osu.Game.Utils;
+using MathNet.Numerics.Distributions;
 
 namespace osu.Game.Rulesets.Osu.Difficulty
 {
@@ -201,18 +202,18 @@ namespace osu.Game.Rulesets.Osu.Difficulty
 
             double aimValue = DifficultyToPerformance(aimDifficulty);
 
-            double lengthBonus = 0.95 + 0.35 * Math.Min(1.0, totalHits / 2000.0) +
-                                 (totalHits > 2000 ? Math.Log10(totalHits / 2000.0) * 0.5 : 0.0);
-            aimValue *= lengthBonus;
 
-            if (effectiveMissCount > 0)
-            {
-                aimEstimatedSliderBreaks = calculateEstimatedSliderBreaks(attributes.AimTopWeightedSliderFactor, attributes);
+            aimEstimatedSliderBreaks = calculateEstimatedSliderBreaks(attributes.AimTopWeightedSliderFactor, attributes);
 
-                double relevantMissCount = Math.Min(effectiveMissCount + aimEstimatedSliderBreaks, totalImperfectHits + countSliderTickMiss);
+            double relevantMissCount = Math.Min(effectiveMissCount + aimEstimatedSliderBreaks, totalImperfectHits + countSliderTickMiss);
+            double imperfectHitsToMissCount = 5 * (countOk + countMeh * 2.0) / (countGreat + countOk + countMeh + countMiss);
+            double lambdaFullCombo = 0.010050335853501441183; // -ln(0.99)
+            double lambdaGivenMissCount = 0.010050335853501441183; // -ln(0.99)
+            if (relevantMissCount + imperfectHitsToMissCount != 0)
+                lambdaGivenMissCount = Gamma.InvCDF(Math.Pow(relevantMissCount, 1.5) + imperfectHitsToMissCount + 1, 1, 0.01);
 
-                aimValue *= calculateMissPenalty(relevantMissCount, attributes.AimDifficultStrainCount);
-            }
+            aimValue *= Math.Pow(lambdaFullCombo / lambdaGivenMissCount, 0.075);
+
 
             // TC bonuses are excluded when blinds is present as the increased visual difficulty is unimportant when notes cannot be seen.
             if (score.Mods.Any(m => m is OsuModBlinds))
@@ -222,7 +223,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty
                 aimValue *= 1.0 + calculateTraceableBonus(attributes.SliderFactor);
             }
 
-            aimValue *= accuracy;
+            // aimValue *= accuracy;
 
             return aimValue;
         }
