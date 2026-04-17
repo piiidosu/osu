@@ -45,6 +45,9 @@ namespace osu.Game.Rulesets.Difficulty.Skills
         /// </summary>
         public virtual double CountTopWeightedObjectDifficulties(double difficultyValue)
         {
+            if (ObjectDifficulties.Count == 0)
+                return 0.0;
+
             return 0.0;
         }
 

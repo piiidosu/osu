@@ -171,7 +171,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
                     break;
                 currentK = nextK;
             }
-            return Math.Pow(nextK, 0.157);
+            return Math.Pow(nextK, 0.1567) * 1.08;
         }
     }
 }

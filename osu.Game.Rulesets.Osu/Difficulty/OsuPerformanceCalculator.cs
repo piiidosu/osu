@@ -210,7 +210,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty
             double lambdaFullCombo = 0.010050335853501441183; // -ln(0.99)
             double lambdaGivenMissCount = 0.010050335853501441183; // -ln(0.99)
             if (relevantMissCount + imperfectHitsToMissCount != 0)
-                lambdaGivenMissCount = Gamma.InvCDF(Math.Pow(relevantMissCount, 2) + imperfectHitsToMissCount + 1, 1, 0.01);
+                lambdaGivenMissCount = Gamma.InvCDF(Math.Pow(relevantMissCount, 3) + imperfectHitsToMissCount + 1, 1, 0.01);
 
             aimValue *= Math.Pow(lambdaFullCombo / lambdaGivenMissCount, 0.075);
 
