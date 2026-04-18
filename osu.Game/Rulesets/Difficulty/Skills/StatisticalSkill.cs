@@ -16,6 +16,7 @@ namespace osu.Game.Rulesets.Difficulty.Skills
         /// Values closer to 1 decay faster whilst lower values give more weight to lower object difficulties.
         /// </summary>
         protected virtual double DecayExponent => 0.9;
+        protected virtual double DecayWeight => 0.9;
 
         protected StatisticalSkill(Mod[] mods)
             : base(mods)
@@ -48,7 +49,13 @@ namespace osu.Game.Rulesets.Difficulty.Skills
             if (ObjectDifficulties.Count == 0)
                 return 0.0;
 
-            return 0.0;
+            double consistentTopStrain = difficultyValue * (1 - DecayWeight); // What would the top strain be if all strain values were identical
+
+            if (consistentTopStrain == 0)
+                return 0.0;
+
+            // Use a weighted sum of all strains. Constants are arbitrary and give nice values
+            return ObjectDifficulties.Sum(s => DifficultyCalculationUtils.Logistic(s / consistentTopStrain, 0.88, 10, 1.1));
         }
 
         public static double DifficultyToPerformance(double difficulty) => 4.0 * Math.Pow(difficulty, 3.0);

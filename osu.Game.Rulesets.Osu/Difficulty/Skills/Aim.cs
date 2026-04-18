@@ -143,7 +143,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
 
         public override double DifficultyValue()
         {
-            double strainExponent = 7.27;
+            double strainExponent = 7.8;
             if (strains.Count == 0)
                 return 0;
 
@@ -171,7 +171,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
                     break;
                 currentK = nextK;
             }
-            return Math.Pow(nextK, 0.1567) * 1.08;
+            return Math.Pow(nextK, 0.155) * 1.35;
         }
     }
 }

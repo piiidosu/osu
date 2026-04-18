@@ -206,14 +206,13 @@ namespace osu.Game.Rulesets.Osu.Difficulty
             aimEstimatedSliderBreaks = calculateEstimatedSliderBreaks(attributes.AimTopWeightedSliderFactor, attributes);
 
             double relevantMissCount = Math.Min(effectiveMissCount + aimEstimatedSliderBreaks, totalImperfectHits + countSliderTickMiss);
-            double imperfectHitsToMissCount = 5 * (countOk + countMeh * 2.0) / (countGreat + countOk + countMeh + countMiss);
+            double imperfectHitsToMissCount = 5.0 * (countOk * 1.5 + countMeh * 3) / (countGreat + countOk + countMeh);
             double lambdaFullCombo = 0.010050335853501441183; // -ln(0.99)
             double lambdaGivenMissCount = 0.010050335853501441183; // -ln(0.99)
             if (relevantMissCount + imperfectHitsToMissCount != 0)
-                lambdaGivenMissCount = Gamma.InvCDF(Math.Pow(relevantMissCount, 3) + imperfectHitsToMissCount + 1, 1, 0.01);
+                lambdaGivenMissCount = Gamma.InvCDF(Math.Max(Math.Pow(relevantMissCount + imperfectHitsToMissCount / 2, 2.727), imperfectHitsToMissCount) / (Math.Log(attributes.AimDifficultStrainCount + 1) / 4) + 1, 1, 0.01);
 
             aimValue *= Math.Pow(lambdaFullCombo / lambdaGivenMissCount, 0.075);
-
 
             // TC bonuses are excluded when blinds is present as the increased visual difficulty is unimportant when notes cannot be seen.
             if (score.Mods.Any(m => m is OsuModBlinds))
@@ -307,7 +306,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty
             if (score.Mods.Any(m => m is OsuModFlashlight))
                 accuracyValue *= 1.02;
 
-            return accuracyValue;
+            return accuracyValue/2;
         }
 
         private double computeFlashlightValue(ScoreInfo score, OsuDifficultyAttributes attributes)
