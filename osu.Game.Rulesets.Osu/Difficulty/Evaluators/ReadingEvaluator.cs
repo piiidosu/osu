@@ -15,7 +15,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
         private const double reading_window_size = 3000; // 3 seconds
         private const double distance_influence_threshold = OsuDifficultyHitObject.NORMALISED_DIAMETER * 1.5; // 1.5 circles distance between centers
 
-        public static double EvaluateDifficultyOf(DifficultyHitObject current, bool hidden)
+        public static double EvaluateDifficultyOf(DifficultyHitObject current, bool hidden, bool traceable)
         {
             if (current.BaseObject is Spinner || current.Index == 0)
                 return 0;
@@ -44,7 +44,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
 
             double preemptDifficulty = calculatePreemptDifficulty(velocity, constantAngleNerfFactor, currObj.Preempt);
 
-            double readingDifficulty = DiffUtils.Norm(1.5, preemptDifficulty, hiddenDifficulty, noteDensityDifficulty);
+            double readingDifficulty = DiffUtils.Norm(1.5, preemptDifficulty, hiddenDifficulty, traceableDifficulty, noteDensityDifficulty);
 
             // Having less time to process information is harder
             readingDifficulty *= highBpmBonus(currObj.AdjustedDeltaTime);
@@ -148,31 +148,19 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
 
         private static double calculateTraceableDifficulty(OsuDifficultyHitObject currObj, OsuDifficultyHitObject nextObj, OsuDifficultyHitObject nextnextObj, OsuDifficultyHitObject prevObj, double pastObjectDifficultyInfluence, double currentVisibleObjectDensity, double velocity, double constantAngleNerfFactor)
         {
+            const double traceable_multiplier = 1.4;
+
             // Account for both past and current densities
             // Reduce density difficulty for future linear movement
-            double densityFactor = Math.Pow(Math.Pow(Math.Pow(currentVisibleObjectDensity, 0.9) + pastObjectDifficultyInfluence, 0.8), 3.3) * 3;
+            double densityFactor = DiffUtils.Pow(DiffUtils.Pow(DiffUtils.Pow(currentVisibleObjectDensity, 0.9) + pastObjectDifficultyInfluence, 0.8), 3.3) * 3;
 
-            double traceableDifficulty = 0.25 + (densityFactor * constantAngleNerfFactor * Math.Pow(velocity, 1.1) * 0.01);
+            double traceableDifficulty = 0.25 + (densityFactor * constantAngleNerfFactor * DiffUtils.Pow(velocity, 1.1) * 0.01);
 
             // Apply a soft cap to general TC reading to account for partial memorization
-            traceableDifficulty = Math.Pow(traceableDifficulty, 0.36) * traceable_multiplier;
+            traceableDifficulty = DiffUtils.Pow(traceableDifficulty, 0.36) * traceable_multiplier;
 
-            // Increase difficulty for back and forth overlapping movement
-            if ((nextnextObj != null) && (nextnextObj.Angle != null) && (nextObj != null))
-            {
-                double nextVelocityVector = nextObj.JumpDistance / Math.Max(nextObj.AdjustedDeltaTime, 10);
-                double nextnextVelocityVector = nextnextObj.JumpDistance / Math.Max(nextnextObj.AdjustedDeltaTime, 10);
-
-                if ((nextnextVelocityVector == 0) || (nextVelocityVector == 0));
-                else if (nextnextVelocityVector >= nextVelocityVector)
-                    traceableDifficulty *= 1 + (0.025 * ((1 - DifficultyCalculationUtils.Smootherstep(nextnextObj.Angle.Value, 0 , 40)) * Math.Pow(nextVelocityVector / nextnextVelocityVector, 4)) * Math.Pow(velocity, 1.5));
-                else
-                    traceableDifficulty *= 1 + (0.025 * ((1 - DifficultyCalculationUtils.Smootherstep(nextnextObj.Angle.Value, 0 , 40)) * Math.Pow(nextnextVelocityVector / nextVelocityVector, 4)) * Math.Pow(velocity, 1.5));
-            }
-
-            // Apply a slight bonus if the AR is above 8
-            traceableDifficulty *= 1 + (0.15 * Math.Clamp(1 - (Math.Abs(currObj.Preempt - 450) / 300), 0, 1));
-
+            double uncertainty = 1;
+            double readingDifficulty = 1;
 
             // Slightly buff TC when the density is low, and there are no sliders in recent gameplay
             // This buffs TC when not enough are circles are consistently on the playfield to ensure consistent circle size memory
@@ -184,19 +172,17 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                         || ((currObj.AdjustedDeltaTime + prevObj.AdjustedDeltaTime >= (currObj.Preempt + 2000)) && (prevObj.BaseObject is Spinner)))
                         && (currObj.BaseObject is HitCircle)
                         && (!(nextObj.BaseObject is Slider) || (nextObj.AdjustedDeltaTime >= nextObj.Preempt)))
-                    {
+                {
                     traceableDifficulty += 2.25;
                     return traceableDifficulty;
-                    }
+                }
 
-                // Calculate the radial uncertainty of the current circle
                 // Heavily decrease uncertainty if sliders were visible recently
                 // Decrease uncertainty for each recent object
-                double traceableUncertainty = 1;
                 if (nextObj != null)
                 {
-                    if (currObj.BaseObject is Slider || prevObj.BaseObject is Slider || nextObj.BaseObject is Slider)
-                        traceableUncertainty *= 0.25;
+                    if (currObj.BaseObject is Slider || (prevObj.BaseObject is Slider && currentVisibleObjectDensity > 0) || nextObj.BaseObject is Slider)
+                        uncertainty *= 0.25;
                 }
 
                 foreach (var loopObj in retrievePastVisibleObjects(currObj))
@@ -205,76 +191,87 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
 
                     if (loopObj.BaseObject is Slider)
                     {
-                        traceableUncertainty *= DifficultyCalculationUtils.Smootherstep(timeBetweenCurrAndLoopObj, Math.Min(1000, currObj.Preempt/2), currObj.Preempt);
-                        traceableUncertainty *= 0.4;
+                        uncertainty *= DiffUtils.Smootherstep(timeBetweenCurrAndLoopObj, Math.Min(1000, currObj.Preempt / 2), currObj.Preempt);
+                        uncertainty *= 0.5;
                     }
                     else if (loopObj.BaseObject is HitCircle)
                     {
-                        traceableUncertainty *= DifficultyCalculationUtils.Smootherstep(timeBetweenCurrAndLoopObj, 0, currObj.Preempt * 0.75);
-                        traceableUncertainty *= 0.875;
+                        uncertainty *= DiffUtils.Smootherstep(timeBetweenCurrAndLoopObj, 0, currObj.Preempt * 0.75);
+                        uncertainty *= 0.875;
                     }
                 }
-                traceableDifficulty *= 1 + (2 * traceableUncertainty);
+                uncertainty *= Math.Pow(0.99, currentVisibleObjectDensity);
             }
 
             // Buff TC when circles are close together such that the approach circles overlap.
-            // Reduce the buff (to 0) when the hitcircles are too close together or too far apart to be overlapping.
+            // Reduce the buff when the hitcircles are too close together or too far apart to be overlapping.
             if (nextObj != null)
             {
                 // Calculates how much the following circle overlaps with the current one
                 double nextCircleRadius = ((3 * (nextObj.AdjustedDeltaTime / nextObj.Preempt)) + 1) * 50;
-                double futureOverlap = Math.Pow(Math.Max(0, nextCircleRadius + 75 - nextObj.JumpDistance), 0.3) * 0.8;
+                double futureOverlap = DiffUtils.Pow(Math.Max(0, nextCircleRadius + 75 - nextObj.JumpDistance), 0.3) * 0.8;
 
                 // Reduce difficulty if movement to next object is small
                 // Reduce difficulty if next object envelops current object
-                double envelop_distance_tolerance = 10;
+                double envelop_distance_tolerance = 20;
                 if (nextCircleRadius + envelop_distance_tolerance - 50 < distance_influence_threshold)
-                    futureOverlap *= DifficultyCalculationUtils.Smootherstep(nextObj.JumpDistance, nextCircleRadius + envelop_distance_tolerance - 50, distance_influence_threshold);
+                    futureOverlap *= DiffUtils.Smootherstep(nextObj.JumpDistance, nextCircleRadius + envelop_distance_tolerance - 50, distance_influence_threshold);
+                futureOverlap *= DiffUtils.Smootherstep(nextObj.JumpDistance, 0, 50) / 4;
 
                 // Reduce difficulty if objects are barely overlapping
-                futureOverlap *= 1 - DifficultyCalculationUtils.Smootherstep(nextObj.JumpDistance - (nextCircleRadius + 50), 0, 40);
+                futureOverlap *= 1 - DiffUtils.Smootherstep(nextObj.JumpDistance - (nextCircleRadius + 50), 0, 20);
 
                 // Reduce difficulty if the movement is close to linear
-                double angle = -10;
-                double nextAngle = 0;
-                double currAngle = 0;
-                if (nextObj.Angle != null)
-                {
-                    nextAngle = nextObj.Angle.Value;
-                    angle = nextObj.Angle.Value;
-                }
-                if ((currObj.Angle != null) && (angle != -10))
-                {
-                    angle = Math.Max(angle, currObj.Angle.Value);
-                    currAngle = currObj.Angle.Value;
-                }
-                else if (currObj.Angle != null)
-                {
-                    angle = currObj.Angle.Value;
-                    currAngle = currObj.Angle.Value;
-                }
+                double? currAngle = currObj.Angle;
+                double? nextAngle = nextObj.Angle;
 
-                double linearity = DifficultyCalculationUtils.Smootherstep(angle, 170, 180);
-                futureOverlap *= 1 - (DifficultyCalculationUtils.Smootherstep(angle, 150, 180) / 5) - (linearity * 0.1);
-
-
-                if ((currObj.Angle != null) && (nextObj.Angle != null))
+                double? maxAngle = (currAngle, nextAngle) switch
                 {
-                    // Reduce difficulty if angles are similar
-                    // Reduce difficulty if angles are wide and similar
-                    futureOverlap *= 0.90 + (DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 0, 40) / 10) - (linearity * 0.1);
-                    futureOverlap *= 0.95 + (DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 0, 40) / 20 * (1 - DifficultyCalculationUtils.Smootherstep(angle, 150, 180))) - (linearity * 0.1);
+                    (double curr, double next) => Math.Max(curr, next),
+                    (double curr, null) => curr,
+                    (null, double next) => next,
+                    _ => null
+                };
 
-                    // Increase difficulty if angle change is large
-                    futureOverlap *= 1 + (0.25 * DifficultyCalculationUtils.Smootherstep(Math.Abs(currAngle - nextAngle), 40, 120));
+                if (maxAngle.HasValue)
+                {
+                    double angle = (double)maxAngle;
+                    double linearity = DiffUtils.Smootherstep(angle, 170, 180);
+                    futureOverlap *= 1 - DiffUtils.Smootherstep(angle, 150, 180) / 5 - (linearity / 10);
+
+                    if (currAngle.HasValue && nextAngle.HasValue)
+                    {
+                        // Reduce difficulty if angles are similar
+                        // Reduce difficulty if angles are wide and similar
+                        double angleDifference = currAngle.Value - nextAngle.Value;
+                        futureOverlap *= 1 - (DiffUtils.Smootherstep(Math.Abs(angleDifference), 0, 40) / 10) - (linearity / 10);
+                        futureOverlap *= 1 - (DiffUtils.Smootherstep(Math.Abs(angleDifference), 0, 40) / 20 * (1 - DiffUtils.Smootherstep(angle, 150, 180))) - (linearity / 10);
+                    }
                 }
-                traceableDifficulty *= Math.Pow(1 + futureOverlap, 0.8);
+                // Increase difficulty for back and forth overlapping movement
+                if ((nextnextObj != null) && (nextnextObj.Angle != null) && (nextObj != null) && (nextObj.Angle != null))
+                {
+                    double nextVelocityVector = nextObj.JumpDistance / Math.Max(nextObj.AdjustedDeltaTime, 10);
+                    double nextnextVelocityVector = nextnextObj.JumpDistance / Math.Max(nextnextObj.AdjustedDeltaTime, 10);
+                    double acuteAngleFactor = DiffUtils.Smootherstep(nextnextObj.Angle.Value, 0, 40) * DiffUtils.Smootherstep(nextObj.Angle.Value, 0, 40);
+
+                    if ((nextnextVelocityVector == 0) || (nextVelocityVector == 0))
+                    { }
+                    else if (nextnextVelocityVector >= nextVelocityVector)
+                        futureOverlap += 0.025 * ((1 - DiffUtils.Smootherstep(acuteAngleFactor, 0, 40)) * DiffUtils.Pow(nextVelocityVector / nextnextVelocityVector, 4)) * DiffUtils.Pow(velocity, 1.5);
+                    else
+                        futureOverlap += 0.025 * ((1 - DiffUtils.Smootherstep(acuteAngleFactor, 0, 40)) * DiffUtils.Pow(nextnextVelocityVector / nextVelocityVector, 4)) * DiffUtils.Pow(velocity, 1.5);
+                }
+                readingDifficulty += DiffUtils.Pow(futureOverlap, 0.8);
             }
 
-            if (currObj.BaseObject is Slider)
-                traceableDifficulty *= 0.5;
+            if (currObj.Preempt < 500)
+                readingDifficulty *= 1 + DiffUtils.Pow((500 - currObj.Preempt) / 150, 2) / 10;
 
-            return traceableDifficulty;
+            if (currObj.BaseObject is Slider)
+                readingDifficulty *= 0.8;
+
+            return traceableDifficulty * readingDifficulty * (1 + uncertainty * 2);
         }
 
         private static double getPastObjectDifficultyInfluence(OsuDifficultyHitObject currObj)

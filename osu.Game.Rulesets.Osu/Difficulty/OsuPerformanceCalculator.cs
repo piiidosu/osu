@@ -223,10 +223,6 @@ namespace osu.Game.Rulesets.Osu.Difficulty
             // TC bonuses are excluded when blinds is present as the increased visual difficulty is unimportant when notes cannot be seen.
             if (score.Mods.Any(m => m is OsuModBlinds))
                 aimValue *= 1.3 + (totalHits * (0.0016 / (1 + 2 * effectiveMissCount)) * DiffUtils.Pow(accuracy, 16)) * (1 - 0.003 * drainRate * drainRate);
-            else if (score.Mods.Any(m => m is OsuModTraceable))
-            {
-                aimValue *= 1.0 + calculateTraceableBonus(attributes.SliderFactor);
-            }
 
             aimValue *= accuracy;
 
@@ -301,11 +297,6 @@ namespace osu.Game.Rulesets.Osu.Difficulty
             // Increasing the accuracy value by object count for Blinds isn't ideal, so the minimum buff is given.
             if (score.Mods.Any(m => m is OsuModBlinds))
                 accuracyValue *= 1.14;
-            else if (score.Mods.Any(m => m is OsuModTraceable))
-            {
-                // Decrease bonus for AR > 10
-                accuracyValue *= 1 + 0.08 * DiffUtils.ReverseLerp(approachRate, 11.5, 10);
-            }
 
             return accuracyValue;
         }
@@ -506,30 +497,6 @@ namespace osu.Game.Rulesets.Osu.Difficulty
             adjustedSpeedValue = double.Lerp(adjustedSpeedValue, speedValue, lerp);
 
             return adjustedSpeedValue / speedValue;
-        }
-
-        /// <summary>
-        /// Calculates a visibility bonus that is applicable to Traceable.
-        /// </summary>
-        private double calculateTraceableBonus(double sliderFactor = 1)
-        {
-            // We want to reward slider aim less, more so at lower AR
-            double highApproachRateSliderVisibilityFactor = 0.5 + (DiffUtils.Pow(sliderFactor, 6) / 2);
-            double lowApproachRateSliderVisibilityFactor = DiffUtils.Pow(sliderFactor, 6);
-
-            // Start from normal curve, rewarding lower AR up to AR7
-            double traceableBonus = 0.0275;
-            traceableBonus += 0.025 * (12.0 - Math.Max(approachRate, 7)) * highApproachRateSliderVisibilityFactor;
-
-            // For AR up to 0 - reduce reward for very low ARs when object is visible
-            if (approachRate < 7)
-                traceableBonus += 0.025 * (7.0 - Math.Max(approachRate, 0)) * lowApproachRateSliderVisibilityFactor;
-
-            // Starting from AR0 - cap values so they won't grow to infinity
-            if (approachRate < 0)
-                traceableBonus += 0.025 * (1 - DiffUtils.Pow(1.5, approachRate)) * lowApproachRateSliderVisibilityFactor;
-
-            return traceableBonus;
         }
 
         // Miss penalty assumes that a player will miss on the hardest parts of a map,

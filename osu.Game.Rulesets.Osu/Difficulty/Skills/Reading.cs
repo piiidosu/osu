@@ -50,7 +50,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
 
         private double calculateAdjustedDifficulty(DifficultyHitObject current)
         {
-            double difficulty = ReadingEvaluator.EvaluateDifficultyOf(current, hasHiddenMod);
+            double difficulty = ReadingEvaluator.EvaluateDifficultyOf(current, hasHiddenMod, hasTraceableMod);
 
             if (Mods.Any(m => m is OsuModTouchDevice))
                 difficulty = DiffUtils.Pow(difficulty, 0.89);
