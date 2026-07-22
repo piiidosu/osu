@@ -151,7 +151,6 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             const double traceable_multiplier = 1.4;
 
             // Account for both past and current densities
-            // Reduce density difficulty for future linear movement
             double densityFactor = DiffUtils.Pow(DiffUtils.Pow(DiffUtils.Pow(currentVisibleObjectDensity, 0.9) + pastObjectDifficultyInfluence, 0.8), 3.3) * 3;
 
             double traceableDifficulty = 0.25 + (densityFactor * constantAngleNerfFactor * DiffUtils.Pow(velocity, 1.1) * 0.01);
@@ -209,17 +208,17 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             {
                 // Calculates how much the following circle overlaps with the current one
                 double nextCircleRadius = ((3 * (nextObj.AdjustedDeltaTime / nextObj.Preempt)) + 1) * 50;
-                double futureOverlap = DiffUtils.Pow(Math.Max(0, nextCircleRadius + 75 - nextObj.JumpDistance), 0.3) * 0.8;
+                double overlapDifficulty = DiffUtils.Pow(Math.Max(0, nextCircleRadius + 75 - nextObj.JumpDistance), 0.3) * 0.8;
 
                 // Reduce difficulty if movement to next object is small
                 // Reduce difficulty if next object envelops current object
                 double envelop_distance_tolerance = 20;
                 if (nextCircleRadius + envelop_distance_tolerance - 50 < distance_influence_threshold)
-                    futureOverlap *= DiffUtils.Smootherstep(nextObj.JumpDistance, nextCircleRadius + envelop_distance_tolerance - 50, distance_influence_threshold);
-                futureOverlap *= DiffUtils.Smootherstep(nextObj.JumpDistance, 0, 50) / 4;
+                    overlapDifficulty *= DiffUtils.Smootherstep(nextObj.JumpDistance, nextCircleRadius + envelop_distance_tolerance - 50, distance_influence_threshold);
+                overlapDifficulty *= DiffUtils.Smootherstep(nextObj.JumpDistance, 0, 50) / 4;
 
                 // Reduce difficulty if objects are barely overlapping
-                futureOverlap *= 1 - DiffUtils.Smootherstep(nextObj.JumpDistance - (nextCircleRadius + 50), 0, 20);
+                overlapDifficulty *= 1 - DiffUtils.Smootherstep(nextObj.JumpDistance - (nextCircleRadius + 50), 0, 20);
 
                 // Reduce difficulty if the movement is close to linear
                 double? currAngle = currObj.Angle;
@@ -237,15 +236,15 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 {
                     double angle = (double)maxAngle;
                     double linearity = DiffUtils.Smootherstep(angle, 170, 180);
-                    futureOverlap *= 1 - DiffUtils.Smootherstep(angle, 150, 180) / 5 - (linearity / 10);
+                    overlapDifficulty *= 1 - DiffUtils.Smootherstep(angle, 150, 180) / 5 - (linearity / 10);
 
                     if (currAngle.HasValue && nextAngle.HasValue)
                     {
                         // Reduce difficulty if angles are similar
                         // Reduce difficulty if angles are wide and similar
                         double angleDifference = currAngle.Value - nextAngle.Value;
-                        futureOverlap *= 1 - (DiffUtils.Smootherstep(Math.Abs(angleDifference), 0, 40) / 10) - (linearity / 10);
-                        futureOverlap *= 1 - (DiffUtils.Smootherstep(Math.Abs(angleDifference), 0, 40) / 20 * (1 - DiffUtils.Smootherstep(angle, 150, 180))) - (linearity / 10);
+                        overlapDifficulty *= 1 - (DiffUtils.Smootherstep(Math.Abs(angleDifference), 0, 40) / 10) - (linearity / 10);
+                        overlapDifficulty *= 1 - (DiffUtils.Smootherstep(Math.Abs(angleDifference), 0, 40) / 20 * (1 - DiffUtils.Smootherstep(angle, 150, 180))) - (linearity / 10);
                     }
                 }
                 // Increase difficulty for back and forth overlapping movement
@@ -258,11 +257,11 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                     if ((nextnextVelocityVector == 0) || (nextVelocityVector == 0))
                     { }
                     else if (nextnextVelocityVector >= nextVelocityVector)
-                        futureOverlap += 0.025 * ((1 - DiffUtils.Smootherstep(acuteAngleFactor, 0, 40)) * DiffUtils.Pow(nextVelocityVector / nextnextVelocityVector, 4)) * DiffUtils.Pow(velocity, 1.5);
+                        overlapDifficulty += 0.025 * ((1 - DiffUtils.Smootherstep(acuteAngleFactor, 0, 40)) * DiffUtils.Pow(nextVelocityVector / nextnextVelocityVector, 4)) * DiffUtils.Pow(velocity, 1.5);
                     else
-                        futureOverlap += 0.025 * ((1 - DiffUtils.Smootherstep(acuteAngleFactor, 0, 40)) * DiffUtils.Pow(nextnextVelocityVector / nextVelocityVector, 4)) * DiffUtils.Pow(velocity, 1.5);
+                        overlapDifficulty += 0.025 * ((1 - DiffUtils.Smootherstep(acuteAngleFactor, 0, 40)) * DiffUtils.Pow(nextnextVelocityVector / nextVelocityVector, 4)) * DiffUtils.Pow(velocity, 1.5);
                 }
-                readingDifficulty += DiffUtils.Pow(futureOverlap, 0.8);
+                readingDifficulty += DiffUtils.Pow(overlapDifficulty, 0.8);
             }
 
             if (currObj.Preempt < 500)
