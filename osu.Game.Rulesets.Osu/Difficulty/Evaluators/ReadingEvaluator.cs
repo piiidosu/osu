@@ -152,7 +152,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
             const double envelop_distance_tolerance = 20;
 
             // Account for both past and current densities
-            double densityFactor = DiffUtils.Pow(DiffUtils.Pow(DiffUtils.Pow(currentVisibleObjectDensity, 0.9) + pastObjectDifficultyInfluence, 0.8), 3.3) * 3;
+            double densityFactor = DiffUtils.Pow(DiffUtils.Pow(DiffUtils.Pow(currentVisibleObjectDensity, 0.8) + pastObjectDifficultyInfluence, 0.8), 3.3) * 3;
 
             double traceableDifficulty = 0.25 + (densityFactor * constantAngleNerfFactor * DiffUtils.Pow(velocity, 1.1) * 0.01);
 
@@ -236,7 +236,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                 {
                     double angle = (double)maxAngle;
                     double linearity = DiffUtils.Smootherstep(angle, 170, 180);
-                    overlapDifficulty *= 1 - DiffUtils.Smootherstep(angle, 150, 180) / 5 - (linearity / 10);
+                    overlapDifficulty *= 1 - DiffUtils.Smootherstep(angle, 60, 150) / 5 - (linearity / 10);
 
                     if (currAngle.HasValue && nextAngle.HasValue)
                     {
@@ -244,7 +244,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
                         // Reduce difficulty if angles are wide and similar
                         double angleDifference = currAngle.Value - nextAngle.Value;
                         overlapDifficulty *= 1 - (DiffUtils.Smootherstep(Math.Abs(angleDifference), 0, 40) / 10) - (linearity / 10);
-                        overlapDifficulty *= 1 - (DiffUtils.Smootherstep(Math.Abs(angleDifference), 0, 40) / 20 * (1 - DiffUtils.Smootherstep(angle, 150, 180))) - (linearity / 10);
+                        overlapDifficulty *= 1 - (DiffUtils.Smootherstep(Math.Abs(angleDifference), 0, 40) / 20 * (1 - DiffUtils.Smootherstep(angle, 60, 150))) - (linearity / 10);
                     }
                 }
                 // Increase difficulty for back and forth overlapping movement
