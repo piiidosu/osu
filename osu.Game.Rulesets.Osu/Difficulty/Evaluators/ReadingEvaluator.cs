@@ -149,6 +149,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
         private static double calculateTraceableDifficulty(OsuDifficultyHitObject currObj, OsuDifficultyHitObject nextObj, OsuDifficultyHitObject nextnextObj, OsuDifficultyHitObject prevObj, double pastObjectDifficultyInfluence, double currentVisibleObjectDensity, double velocity, double constantAngleNerfFactor)
         {
             const double traceable_multiplier = 1.4;
+            const double envelop_distance_tolerance = 20;
 
             // Account for both past and current densities
             double densityFactor = DiffUtils.Pow(DiffUtils.Pow(DiffUtils.Pow(currentVisibleObjectDensity, 0.9) + pastObjectDifficultyInfluence, 0.8), 3.3) * 3;
@@ -212,7 +213,6 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators
 
                 // Reduce difficulty if movement to next object is small
                 // Reduce difficulty if next object envelops current object
-                double envelop_distance_tolerance = 20;
                 if (nextCircleRadius + envelop_distance_tolerance - 50 < distance_influence_threshold)
                     overlapDifficulty *= DiffUtils.Smootherstep(nextObj.JumpDistance, nextCircleRadius + envelop_distance_tolerance - 50, distance_influence_threshold);
                 overlapDifficulty *= DiffUtils.Smootherstep(nextObj.JumpDistance, 0, 50) / 4;
