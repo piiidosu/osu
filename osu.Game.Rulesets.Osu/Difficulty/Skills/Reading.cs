@@ -28,14 +28,11 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
 
         private double currentStrain;
 
-        private double? firstObjectStartTime;
-
         private double strainDecay(double ms) => DiffUtils.Pow(0.8, ms / 1000);
 
         protected override double ProcessInternal(DifficultyHitObject current)
         {
             const double skill_multiplier = 2.5;
-            const double reduced_difficulty_duration = 40 * 1000;
 
             double decay = strainDecay(current.DeltaTime);
 
