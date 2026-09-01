@@ -39,19 +39,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
 
             double decay = strainDecay(current.DeltaTime);
 
-            // This currently operates under the assumption that `ObjectDifficultyOf` is called once per object, and in order.
-            // Under that assumption, we can trust that `current.StartTime` refers to the start time of the first object in the case that `firstObjectStartTime` is yet to be set.
-            firstObjectStartTime ??= current.StartTime;
-
-            const double reduced_difficulty_base_line = 0.8; // Assume that even with full memorisation, skill is still required to read and play the first objects.
-
             double currentObjectStrain = calculateAdjustedDifficulty(current) * (1 - decay) * skill_multiplier;
-
-            if (current.StartTime <= firstObjectStartTime + reduced_difficulty_duration)
-            {
-                double scale = Math.Log10(double.Lerp(1, 10, Math.Clamp((current.StartTime - firstObjectStartTime.Value) / reduced_difficulty_duration, 0, 1)));
-                currentObjectStrain *= double.Lerp(reduced_difficulty_base_line, 1.0, scale);
-            }
 
             currentStrain *= decay;
             currentStrain += currentObjectStrain;
@@ -110,8 +98,8 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
 
             for (int i = 0; i < difficulties.Count; i++)
             {
-                double scale = (i + topWeightedObjectDifficulties) / topWeightedObjectDifficulties;
-                difficulties[i] *= 1 - (0.1 * DiffUtils.Pow(0.99, scale));
+                double scale = (i * 2 + topWeightedObjectDifficulties) / topWeightedObjectDifficulties;
+                difficulties[i] *= 1 - (0.12 * DiffUtils.Pow(0.99, scale));
             }
 
             return difficulties;
