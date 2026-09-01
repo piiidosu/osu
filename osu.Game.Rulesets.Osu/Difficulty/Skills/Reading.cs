@@ -3,6 +3,7 @@
 
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using osu.Game.Rulesets.Difficulty.Aggregation;
 using osu.Game.Rulesets.Difficulty.Preprocessing;
 using osu.Game.Rulesets.Difficulty.Skills;
@@ -42,7 +43,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
             // Under that assumption, we can trust that `current.StartTime` refers to the start time of the first object in the case that `firstObjectStartTime` is yet to be set.
             firstObjectStartTime ??= current.StartTime;
 
-            const double reduced_difficulty_base_line = 0.2; // Assume that even with full memorisation, skill is still required to read and play the first objects.
+            const double reduced_difficulty_base_line = 0.8; // Assume that even with full memorisation, skill is still required to read and play the first objects.
 
             double currentObjectStrain = calculateAdjustedDifficulty(current) * (1 - decay) * skill_multiplier;
 
@@ -84,12 +85,36 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
 
         public override double DifficultyValue()
         {
-            if (ObjectDifficulties.Count == 0)
-                return 0;
+            var difficulties = ObjectDifficulties.Where(d => d > 0).ToList();
 
-            (double difficulty, harmonicWeightSum) = HarmonicSeries.Aggregate(ObjectDifficulties);
+            if (difficulties.Count == 0)
+                return 0.0;
+
+            (double difficulty, harmonicWeightSum) = HarmonicSeries.Aggregate(difficulties);
+
+            double topWeightedObjectDifficulties = CountTopWeightedObjectDifficulties(difficulty);
+
+            if (topWeightedObjectDifficulties == 0)
+                return 0.0;
+
+            difficulties = GetTransformedDifficulties(difficulties, topWeightedObjectDifficulties);
+
+            (difficulty, harmonicWeightSum) = HarmonicSeries.Aggregate(difficulties);
 
             return difficulty;
+        }
+
+        protected List<double> GetTransformedDifficulties(List<double> difficulties, double topWeightedObjectDifficulties)
+        {
+            difficulties.Sort((a, b) => b.CompareTo(a));
+
+            for (int i = 0; i < difficulties.Count; i++)
+            {
+                double scale = (i + topWeightedObjectDifficulties) / topWeightedObjectDifficulties;
+                difficulties[i] *= 1 - (0.1 * DiffUtils.Pow(0.99, scale));
+            }
+
+            return difficulties;
         }
 
         public double CountTopWeightedObjectDifficulties(double difficultyValue)
@@ -103,7 +128,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
             double consistentTopNote = difficultyValue / harmonicWeightSum; // What would the top difficulty be if all object difficulties were identical
 
             if (consistentTopNote == 0)
-                return 0;
+                return 0.0;
 
             return ObjectDifficulties.Sum(d => DiffUtils.Logistic(d / consistentTopNote, 1.15, 5, 1.1));
         }
